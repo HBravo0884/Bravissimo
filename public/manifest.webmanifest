@@ -1,12 +1,12 @@
 {
   "name": "Bravissimo",
   "short_name": "Bravissimo",
-  "description": "Note reading, rhythm and theory games with a teacher dashboard.",
+  "description": "The studio companion for Bravo Piano Studio: weekly sheets, ladders, lessons and the family page.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#fbfaf7",
-  "theme_color": "#6d4ae0",
+  "background_color": "#f0f7f8",
+  "theme_color": "#097c87",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },

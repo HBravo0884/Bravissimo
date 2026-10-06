@@ -95,6 +95,9 @@ export function App() {
       case "more":
         page = <More />;
         break;
+      case "games":
+        page = <Practice token="" game={route[1] ?? "notes"} />;
+        break;
       default:
         page = <Today />;
     }
@@ -110,7 +113,7 @@ export function App() {
     { to: "/students", label: "Students", icon: "people", on: section === "students" || section === "s" },
     { to: "/lessons", label: "Lessons", icon: "mic", on: section === "lessons", wide: true },
     { to: "/reports", label: "Reports", icon: "doc", on: section === "reports", wide: true },
-    { to: "/more", label: "More", icon: "more", on: ["more", "promises", "threads", "export", "settings"].includes(section) },
+    { to: "/more", label: "More", icon: "more", on: ["more", "promises", "threads", "export", "settings", "games"].includes(section) },
   ];
   const nextTheme: Theme = theme === "dark" ? "light" : theme === "light" ? "system" : "dark";
 

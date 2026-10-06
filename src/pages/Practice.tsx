@@ -27,13 +27,16 @@ const isGame = (g: string): g is GameId => g in GAME_BY_ID;
  * minutes, which go to the open ear or theory app packet as Reported.
  */
 export function Practice({ token, game }: { token: string; game: string }) {
+  // With no family link, this is the teacher trying a game: nothing is recorded.
+  const teacher = !token;
+  const base = teacher ? "/games" : `/f/${token}/play`;
   const g: GameId = isGame(game) ? game : "notes";
   const info = GAME_BY_ID[g];
   const [setup, setSetup] = useState<Setup>(() => getPref<Setup>(`setup.${g}`, { stage: 0, variant: info.variants[0].id, input: "pad", bpm: 76 }));
   const [round, setRound] = useState(0);
   const [phase, setPhase] = useState<"choose" | "play" | "done">("choose");
   const [result, setResult] = useState<(RoundResult & { cleared?: number[] }) | null>(null);
-  const [sent, setSent] = useState<"" | "sent" | "queued">("");
+  const [sent, setSent] = useState<"" | "sent" | "queued" | "try">("");
   const history = getPref<Record<string, ItemStat>>(`history.${g}`, {});
 
   const save = (s: Setup) => {
@@ -59,6 +62,10 @@ export function Practice({ token, game }: { token: string; game: string }) {
     }
     setPref(`history.${g}`, merged);
     if (!r.attempts) return;
+    if (teacher) {
+      setSent("try");
+      return;
+    }
     const five = (r.cleared?.length ?? 0) > 0 || r.bestStreak >= 5 ? [setting()] : [];
     const slow = Object.entries(r.items)
       .filter(([, v]) => v[1] > 0 && v[0] / v[1] < 0.7)
@@ -82,26 +89,26 @@ export function Practice({ token, game }: { token: string; game: string }) {
   };
 
   if (phase === "play") {
+    const play =
+      g === "rhythm" ? (
+        <RhythmRound key={round} rung={setup.stage} mode={setup.variant as RhythmMode} initialBpm={setup.bpm} alreadyCleared={false} onFinish={(r: RhythmResult) => void finish(r)} onQuit={() => setPhase("choose")} />
+      ) : (
+        <FlashRound key={round} config={{ game: g, stage: setup.stage, variant: setup.variant, format: "steady", input: setup.input, midi: false }} history={history} onFinish={(r) => void finish(r)} onQuit={() => setPhase("choose")} />
+      );
+    if (teacher) return play;
     return (
       <div className="family-shell">
-        <main className="main playing">
-          {g === "rhythm" ? (
-            <RhythmRound key={round} rung={setup.stage} mode={setup.variant as RhythmMode} initialBpm={setup.bpm} alreadyCleared={false} onFinish={(r: RhythmResult) => void finish(r)} onQuit={() => setPhase("choose")} />
-          ) : (
-            <FlashRound key={round} config={{ game: g, stage: setup.stage, variant: setup.variant, format: "steady", input: setup.input, midi: false }} history={history} onFinish={(r) => void finish(r)} onQuit={() => setPhase("choose")} />
-          )}
-        </main>
+        <main className="main playing">{play}</main>
       </div>
     );
   }
 
-  return (
-    <div className="family-shell">
-      <div className="band" aria-hidden="true" />
-      <main className="family-main stack">
-        <a className="small" href={href(`/f/${token}`)}>
-          <Icon name="back" size={16} /> This week
+  const body = (
+    <>
+        <a className="small" href={href(teacher ? "/more" : `/f/${token}`)}>
+          <Icon name="back" size={16} /> {teacher ? "More" : "This week"}
         </a>
+        {teacher && <p className="small muted">The games the family page opens. A try-out here is not recorded for any student.</p>}
         {phase === "done" && result && (
           <section className="card pad stack-sm">
             <h2>{info.name}</h2>
@@ -111,7 +118,13 @@ export function Practice({ token, game }: { token: string; game: string }) {
             {(result.cleared?.length ?? 0) > 0 || result.bestStreak >= 5 ? <p className="good-text">Five in a row at {setting()}. Show me at your lesson.</p> : null}
             <p className="small muted">
               {Math.max(1, Math.round(result.durationMs / 60000))} min.{" "}
-              {sent === "sent" ? "Your minutes reached your teacher." : sent === "queued" ? "Your minutes will send when you are back online." : ""}
+              {sent === "sent"
+                ? "Your minutes reached your teacher."
+                : sent === "queued"
+                  ? "Your minutes will send when you are back online."
+                  : sent === "try"
+                    ? "A try-out: nothing was recorded."
+                    : ""}
             </p>
             <div className="btn-row">
               <button
@@ -135,7 +148,7 @@ export function Practice({ token, game }: { token: string; game: string }) {
 
         <nav className="row-wrap" aria-label="Games">
           {GAMES.map((x) => (
-            <a key={x.id} className={`pill-button ${x.id === g ? "on" : ""}`} href={href(`/f/${token}/play/${x.id}`)} onClick={() => setPhase("choose")}>
+            <a key={x.id} className={`pill-button ${x.id === g ? "on" : ""}`} href={href(`${base}/${x.id}`)} onClick={() => setPhase("choose")}>
               {x.name}
             </a>
           ))}
@@ -194,7 +207,13 @@ export function Practice({ token, game }: { token: string; game: string }) {
             </button>
           </section>
         )}
-      </main>
+    </>
+  );
+  if (teacher) return <div className="stack page-narrow">{body}</div>;
+  return (
+    <div className="family-shell">
+      <div className="band" aria-hidden="true" />
+      <main className="family-main stack">{body}</main>
     </div>
   );
 }

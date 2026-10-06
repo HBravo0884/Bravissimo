@@ -15,6 +15,7 @@ export function More() {
     { to: "/promises", icon: "promise", label: "Promises", sub: `${owedPromises(promises).length} owed` },
     { to: "/threads", icon: "thread", label: "Threads", sub: `${openThreads(threads).length} open` },
     { to: "/export", icon: "download", label: "Records file", sub: "The JSON the sheet generator prints from" },
+    { to: "/games", icon: "play", label: "Practice games", sub: "Try the games the family page opens; nothing is recorded" },
     { to: "/settings", icon: "gear", label: "Settings", sub: sync.mode === "demo" ? "Demo studio" : "Notion" },
   ];
   return (
