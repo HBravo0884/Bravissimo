@@ -1,4 +1,4 @@
-import type { GameId } from "../data/model";
+import type { GameId } from "./types";
 import { RHYTHM_LEVELS } from "../music/rhythm";
 import { FLASH_GAMES } from "./flash";
 
@@ -18,8 +18,8 @@ export interface GameInfo {
 export const GAMES: GameInfo[] = [
   {
     id: "notes",
-    name: "Note Rush",
-    tagline: "Read notes on the staff, fast and accurate.",
+    name: "Note names",
+    tagline: "Name the note on the staff, then find it on the keys.",
     codes: ["ML"],
     slot: 1,
     stages: FLASH_GAMES.notes.stages,
@@ -28,8 +28,8 @@ export const GAMES: GameInfo[] = [
   },
   {
     id: "rhythm",
-    name: "Rhythm Ladder",
-    tagline: "Hear it, read it, tap it. Five in a row clears a rung.",
+    name: "Subdivide",
+    tagline: "Hear it, read it, tap it. Five in a row clears a level.",
     codes: ["CO", "ET"],
     slot: 2,
     stages: RHYTHM_LEVELS.map((l) => ({ name: l.name, blurb: l.teach })),
@@ -42,8 +42,8 @@ export const GAMES: GameInfo[] = [
   },
   {
     id: "intervals",
-    name: "Interval Detective",
-    tagline: "How far apart are two notes? Count the letters.",
+    name: "How far apart",
+    tagline: "Two notes on the staff: name the distance.",
     codes: ["TH", "ET"],
     slot: 3,
     stages: FLASH_GAMES.intervals.stages,
@@ -52,7 +52,7 @@ export const GAMES: GameInfo[] = [
   },
   {
     id: "keys",
-    name: "Key Signatures",
+    name: "Key signatures",
     tagline: "Name the major key from its sharps or flats.",
     codes: ["TH"],
     slot: 4,

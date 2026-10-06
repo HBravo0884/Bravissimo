@@ -1,4 +1,4 @@
-import type { ItemStat } from "../data/model";
+import type { ItemStat } from "./types";
 
 export type Rng = () => number;
 

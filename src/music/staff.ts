@@ -82,11 +82,10 @@ export function keySignatureTip(key: MajorKey): string {
   if (!key.type) return "No sharps or flats: that's C major.";
   if (key.type === "sharp") {
     const last = SHARP_ORDER[key.count - 1];
-    return `Last sharp is ${last}♯. Go up one half step: ${key.name} major.`;
+    return `The newest sharp, ${last}♯, is one key below the new home. One key up: ${key.name} major.`;
   }
-  if (key.count === 1) return "One flat is the freebie: F major.";
-  const secondLast = FLAT_ORDER[key.count - 2];
-  return `The second-to-last flat is ${secondLast}♭, and that is the key: ${key.name} major.`;
+  const last = FLAT_ORDER[key.count - 1];
+  return `The newest flat, ${last}♭, sits on 4 of the new home. Call it 4 and walk down to 1: ${key.name} major.`;
 }
 
 /* --------------------------------- intervals -------------------------------- */

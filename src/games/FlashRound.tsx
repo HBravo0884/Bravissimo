@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Format, ItemStat } from "../data/model";
+import type { Format, ItemStat } from "./types";
 import { cue, playNotes, unlockAudio } from "../music/audio";
 import { connectMidi } from "../music/midi";
 import { letterOfWhiteKey } from "../music/pitch";
@@ -7,7 +7,7 @@ import { Staff } from "../components/Staff";
 import { Piano, type KeyMark } from "../components/Piano";
 import { Icon, MusicLabel } from "../components/ui";
 import { FLASH_GAMES, type FlashQuestion } from "./flash";
-import { addStat, multiplier, pickItem, pointsFor, speedBonus } from "./scoring";
+import { addStat, pickItem, pointsFor, speedBonus } from "./scoring";
 
 export const SPRINT_MS = 60_000;
 export const STEADY_COUNT = 20;
@@ -251,7 +251,6 @@ export function FlashRound({
     );
   }
 
-  const mult = multiplier(tally.streak);
   const secs = Math.ceil(timeLeft / 1000);
   const marks: Record<number, KeyMark> = {};
   if (fb && fb.midi !== undefined) marks[fb.midi] = fb.correct ? "good" : "bad";
@@ -260,14 +259,15 @@ export function FlashRound({
     <div className="play">
       <div className="hud">
         <div>
-          <div className="label">Score</div>
+          <div className="label">Right</div>
           <div className="score num" aria-live="polite">
-            {tally.score}
+            {tally.correct}
+            <small> of {tally.attempts}</small>
           </div>
         </div>
-        <div className="combo" aria-label={`Streak ${tally.streak}, times ${mult}`}>
-          {tally.streak > 0 && <span>🔥 {tally.streak}</span>}
-          {mult > 1 && <span className="mult">×{mult}</span>}
+        <div>
+          <div className="label">In a row</div>
+          <div className="score num">{tally.streak}</div>
         </div>
         <div className="row">
           <div style={{ textAlign: "right" }}>
@@ -298,14 +298,14 @@ export function FlashRound({
             </div>
           </>
         )}
-        {midiName && <span className="pill pill-accent tiny">🎹 {midiName}</span>}
+        {midiName && <span className="pill pill-accent tiny">MIDI: {midiName}</span>}
       </div>
 
       <div className={`feedback ${fb ? (fb.correct ? "good" : "bad") : "idle"}`} aria-live="polite">
         {!fb && (game.input === "letters" ? (config.input === "piano" ? "Play the note on the keys" : "Tap the letter name") : "Choose an answer")}
         {fb?.correct && q && (
           <span>
-            ✓ <MusicLabel text={q.answerLabel} /> <span className="num">+{tally.last}</span>
+            <Icon name="check" size={20} /> <MusicLabel text={q.answerLabel} />
           </span>
         )}
         {fb && !fb.correct && q && (

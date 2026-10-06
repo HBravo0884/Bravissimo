@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ItemStat } from "../data/model";
+import type { ItemStat } from "./types";
 import { audioNow, click, cue, unlockAudio } from "../music/audio";
 import { CLEAR_STREAK, distractor, gradeTaps, makeBar, onsets, RHYTHM_LEVELS, sameSound, type Bar } from "../music/rhythm";
 import { RhythmBar } from "../components/RhythmBar";
 import { Icon } from "../components/ui";
-import { addStat, multiplier, pointsFor, timingBonus } from "./scoring";
+import { addStat, pointsFor, timingBonus } from "./scoring";
 import type { RoundResult } from "./FlashRound";
 
 export const RHYTHM_COUNT = 10;
@@ -126,7 +126,7 @@ export function RhythmRound({
       let extra = "";
       if (ok && run >= CLEAR_STREAK && !alreadyCleared && !clearedNow) {
         setClearedNow(true);
-        extra = rung < RHYTHM_LEVELS.length - 1 ? ` Rung cleared! ${RHYTHM_LEVELS[rung + 1].name} is unlocked.` : " That's the whole ladder!";
+        extra = rung < RHYTHM_LEVELS.length - 1 ? ` Five in a row. Show me at your lesson; ${RHYTHM_LEVELS[rung + 1].name} is next.` : " Five in a row on the last level. Show me at your lesson.";
       } else if (ok && !alreadyCleared && !clearedNow) extra = ` ${CLEAR_STREAK - run} more in a row clears this rung.`;
       setAnswered({ ok, chosen, text: text + extra });
     },
@@ -222,18 +222,20 @@ export function RhythmRound({
   });
 
   const showNotation = mode === "read" || (mode === "echo" && answered);
-  const mult = multiplier(tally.streak);
 
   return (
     <div className="play">
       <div className="hud">
         <div>
-          <div className="label">Score</div>
-          <div className="score num">{tally.score}</div>
+          <div className="label">Right</div>
+          <div className="score num">
+            {tally.correct}
+            <small> of {tally.attempts}</small>
+          </div>
         </div>
-        <div className="combo">
-          {tally.streak > 0 && <span>🔥 {tally.streak}</span>}
-          {mult > 1 && <span className="mult">×{mult}</span>}
+        <div>
+          <div className="label">In a row</div>
+          <div className="score num">{tally.run}</div>
         </div>
         <div className="row">
           <div style={{ textAlign: "right" }}>
@@ -314,8 +316,7 @@ export function RhythmRound({
       {answered && (
         <div className={`feedback ${answered.ok ? "good" : "bad"}`} aria-live="polite">
           <span>
-            {answered.ok ? "✓ " : ""}
-            {answered.text} {answered.ok && <span className="num">+{tally.last}</span>}
+            {answered.ok && <Icon name="check" size={20} />} {answered.text}
           </span>
         </div>
       )}
@@ -347,7 +348,7 @@ export function RhythmRound({
           }}
           disabled={!!answered}
         >
-          {armed ? "Tap!" : answered ? "Done" : "Press Play, listen to the count-in, then tap here (or the space bar)"}
+          {armed ? "Tap" : answered ? "Done" : "Press Play, listen to the count-in, then tap here (or the space bar)"}
         </button>
       )}
     </div>

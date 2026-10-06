@@ -1,6 +1,6 @@
 // Bravissimo service worker: network first for pages, cache first for built assets,
 // so the studio tablet keeps working when the Wi-Fi drops.
-const CACHE = "bravissimo-v1";
+const CACHE = "bravissimo-v2";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./index.html", "./manifest.webmanifest", "./icon.svg"])));
@@ -15,7 +15,10 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const req = e.request;
-  if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== "GET" || url.origin !== self.location.origin) return;
+  // The record and the family pages always come from the network; nothing private is cached here.
+  if (url.pathname.includes("/api/") || url.pathname.includes("/.netlify/")) return;
   if (req.mode === "navigate") {
     e.respondWith(
       fetch(req)

@@ -65,7 +65,7 @@ const range = (a: string, b: string) => naturalRange(a, b).map(pitchName);
 export const NOTE_STAGES: NoteStage[] = [
   {
     name: "First ten",
-    blurb: "Middle C up to G, and bass C up to G: the ten notes of Level Up 1.",
+    blurb: "Middle C up to G, and bass C up to G: the first ten notes on the staff.",
     treble: range("C4", "G4"),
     bass: range("C3", "G3"),
   },
@@ -216,7 +216,8 @@ export const intervals: FlashGame = {
 const KEY_STAGES: (Stage & { keys: string[] })[] = [
   { name: "C, G and F", blurb: "No sharps, one sharp, one flat: the first three keys.", keys: ["C", "G", "F"] },
   { name: "Up to three", blurb: "Up to three sharps or flats.", keys: ["C", "G", "D", "A", "F", "Bb", "Eb"] },
-  { name: "All fifteen", blurb: "Every major key signature, seven sharps to seven flats.", keys: MAJOR_KEYS.map((k) => k.id) },
+  // The book's clock stops at six each way (F♯ and G♭ at six o'clock); the game never quizzes past what the book teaches.
+  { name: "Around the clock", blurb: "Every key to six sharps and six flats.", keys: MAJOR_KEYS.filter((k) => k.count <= 6).map((k) => k.id) },
 ];
 
 const KEY_BY_ID = Object.fromEntries(MAJOR_KEYS.map((k) => [k.id, k]));

@@ -1,74 +1,105 @@
 # Bravissimo
 
-Music-reading games with student score tracking, built for Bravo Piano Studio.
-Students practice note reading, rhythm, intervals and key signatures on a phone,
-tablet or the studio iPad. The teacher sees every student's progress, streaks,
-weak spots and Level Up challenges on one dashboard.
+The studio companion for Bravo Piano Studio. It keeps one dated record per
+student, built on the studio's own system: the weekly sheet with four cards and
+their Done when, the R and T ladders, threads and lessons, promises, the
+family loop. Level Up sits on top as a mapping, not the backbone.
 
-## What's in it
+The record lives in **Notion**, in the existing Student tracker. The app reads
+and writes the tracker's Students, Lessons, Threads and Songs, and keeps its own
+tables (Weeks, Promises, Progress, Challenges, Practice, Repertoire, Reports,
+Rungs, Skills Check, Resources) on a Bravissimo page inside the tracker.
 
-**Games** (each one adapts: notes a student misses come back more often until they stick)
+## What it does
 
-| Game | Practices | Stages |
+| Screen | Who | What |
 |---|---|---|
-| Note Rush | Naming notes on treble, bass or grand staff; answer with letters, on-screen keys, or a real piano over MIDI | First ten (Level Up 1's ten pitches) · Landmarks · Whole staff · Ledger lines |
-| Rhythm Ladder | The Subdivide ladder: Listen & match, Read & tap, Hear & tap (call and response) | 12 rungs, quarter notes to quintuplets; five in a row clears a rung |
-| Interval Detective | Counting intervals, melodic and stacked | Steps & skips · 2nd to 5th · Up to the octave |
-| Key Signatures | Naming major keys from sharps and flats | C, G and F · Up to three · All fifteen |
+| Today | teacher, phone in the room | The day in slot order with Ask first, the Done when lines and Check before you teach (promises owed, retests, flags, what the family wrote). One tap starts a lesson and stamps the time for the room recording. |
+| Lesson capture | teacher, one hand | Met, not yet or not tried per card; quick adds for a win, a promise, a parent ask, a recital piece, a criterion, a note. |
+| Week editor | teacher, Mac | Four cards, the routine, Keep it alive, wins, song, codes, the note to the adult. Copies last week forward with carried-over tags in the sheet's language. Runs the build script's checks (four cards, codes in the fifteen, no item under five minutes, totals 15/20/25/30, no dash, no exclamation mark, no emoji, no level). |
+| Records file | teacher | Exports `students_<day><ddmon>.json` exactly as the Python sheet generator reads it. Opt-outs get no codes, no points and no challenges block. |
+| Board | teacher | Never reported, then stale, then fresh, with flags: no current piece, no open challenge, promises owed, no lesson record, practice days trending down, threads untouched for three weeks. |
+| Student record | teacher | Week, ladders with the Skills Check (prompt sets A and B, retest queue, 60 and 40 point credits), challenges (templates, criterion, blocks, app minutes), repertoire, lesson history, profile and the family link. |
+| Lessons, threads, promises, reports | teacher | The lesson record review, threads with What we are watching and Next move, promises until kept, and the reports desk (who is due, drafts from lesson records only, the voice check, copy for Opus1, a posted tick only the teacher sets). |
+| Family page | student and adult, any phone | Opened from a private link behind the sheet's code, no account. This week's checked sheet in the family's language: tick a practice day, "I think I've got it", the listening log, Write to me, the codes, the note to the adult, the current sheet with only the one before and the next. Never a level, a rank, a points quantity or another student. |
+| Practice games | student | Note names, Subdivide (12 levels, three modes), How far apart, Key signatures (to six sharps and flats, as in the book). No points, badges, emoji or clock; a plain summary, and the minutes go to the open ET or TH app packet as Reported. |
 
-Sprint rounds (60 seconds, speed bonus) or Steady rounds (20 questions, no clock, "Show me" to learn instead of guess).
-Streak multipliers up to ×4, personal bests, practice-day streaks and 13 badges. No leaderboards: students only ever compete with themselves.
+Every fact carries its evidence mark. Anything from a family's device is
+Reported until it is checked in the lesson.
 
-**Teacher dashboard**
-- Weekly studio numbers: who practiced, games, minutes, accuracy.
-- Roster with streaks, last played, an accuracy sparkline, and flags: *No practice in N days*, *Accuracy down*, *New personal best*, *Ready to level up*.
-- Per student: accuracy and score charts (scores only compared within the same stage and format), a skills map showing accuracy for every note, interval, key and rung, full history, CSV export.
-- **Level Up tracker** that follows the studio's rules: 15 categories, codes like `ET 1b`, 40–150 points in tens, 1,000 points a level, points land once when a challenge is finished, notebook carry-in, per-student opt-out. Games carry no points of their own; their minutes feed linked challenges (e.g. ET 1b, 250 minutes).
+## Setting it up
 
-**Home practice without a server**
-The teacher sends a *home practice link* that sets up a student's own device. The student taps *Send scores* and pastes the link back into their lesson messages. Opening it on the teacher's device merges the games in.
+1. **Notion integration.** In Notion, Settings, Connections, Develop or manage
+   integrations: make an internal integration called Bravissimo and copy its secret.
+2. **Share the tracker.** On the Student tracker page, open the menu, choose
+   Connections and add Bravissimo. That covers the tracker and everything under it.
+3. **Netlify.** Connect this repository. `netlify.toml` sets the build, the
+   publish folder and the function. In Site configuration, Environment
+   variables, add:
 
-**Built for phones first:** every control is at least 44px, keys respond on touch-down, the game screen fits one hand, light and dark themes, works offline after the first visit (installable to the home screen).
+   | Variable | Value |
+   |---|---|
+   | `NOTION_TOKEN` | the integration secret |
+   | `NOTION_ROOT_PAGE` | the Student tracker page id (the 32 characters at the end of its link) |
+   | `STUDIO_KEY` | a long passphrase only the teacher knows |
+
+   Optional: `NOTION_DB_<NAME>` (for example `NOTION_DB_STUDENTS`) pins a
+   database by id instead of finding it by title.
+4. **Set up.** Open the site, go to Settings, choose Notion, type the studio
+   key, and choose Set up Notion. Setup only adds: the Bravissimo page, the
+   app's databases, and a few properties on Students (Display name, Language,
+   Accent, Points, Flags, Age band, Family key...) and Lessons (Started at,
+   Capture). It never removes or renames anything.
+
+## How the data moves
+
+```
+browser (record cached on the device, outbox of changes)
+   |  /api/pull, /api/push        studio key in a header
+   |  /api/family                 a family's private link key
+Netlify Function (netlify/functions/api.ts -> server/api.ts)
+   |  Notion API, 2022-06-28
+Notion: Student tracker + Bravissimo page
+```
+
+- Edits land on the device first and sync when there is a connection, so the
+  room never waits on the network. A refused change shows on the sync badge and
+  in Settings, where it can be retried or dropped.
+- Family ticks, messages and listening entries are merged on the server, so a
+  teacher's edit never overwrites them.
+- Notion allows about three requests a second; the function retries when asked
+  to slow down, and the app pulls only what changed since the last pull.
 
 ## Privacy
 
-All data stays in the browser on the device where it was entered (localStorage). Nothing is uploaded, and no student data lives in this repository: the demo studio uses made-up names. Settings → *Export backup* saves everything to a file; *Restore or merge* brings it back or combines devices. An optional teacher PIN keeps students on a shared tablet out of the dashboard.
+- No student data is in this repository. The demo studio uses invented names,
+  and the studio's own content (the ladders, the Skills Check items, the
+  checked tools) lives in Notion, not in the code.
+- The family link shows one student's family-visible week and nothing else;
+  resetting it stops the old link. The service worker never caches `/api/`.
+- Keys live in Netlify environment variables.
 
 ## Develop
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
-npm test           # unit tests (music theory, scoring, store, Level Up rules)
-npm run build      # type-check + production build into dist/
+npm run dev        # http://localhost:5173, demo studio (no server)
+npm test           # rules, the Notion function against a fake Notion, end-to-end sync
+npm run build      # type-check and production build into dist/
 ```
 
-Settings → *Load demo studio* fills the app with eight fictional students and a month of practice.
-
-## Deploy (Netlify)
-
-Connect the GitHub repo in Netlify. `netlify.toml` already sets the build command (`npm run build`) and publish folder (`dist`). The app uses hash routes (`#/teacher`), so no redirect rules are needed.
+`npx netlify dev` runs the function locally with the environment variables.
 
 ## Layout
 
 ```
+shared/    types, the sheet rules and records JSON, family view, board, ladders, Level Up, labels (en, es)
+server/    the Notion client, the field mapping, discovery and setup, the API handler, a fake Notion for tests
+netlify/   the function entry
 src/
-  music/      pitch, staff and key-signature geometry, rhythm ladder, Web Audio, Web MIDI, Bravura glyphs
-  games/      question generators, scoring and adaptive picking, the round screens
-  data/       data model, local store, stats, badges, Level Up rules, share links, demo studio
-  components/ staff and rhythm renderers, piano keyboard, charts, UI pieces
-  pages/      student picker, student hub, play, results, teacher dashboard, student detail, settings
-docs/         planning notes and prompts
+  data/       the local store and sync, actions, selectors, the demo studio
+  pages/      Today, capture, board, students, student record, week editor, lessons, promises, threads, reports, export, settings, family page, games
+  components/ UI pieces, the family week, staff and rhythm renderers, piano keyboard
+  games/      the practice rounds and their question generators
+  music/      pitch and staff geometry, the Subdivide port, Web Audio, Web MIDI, Bravura glyphs
 ```
-
-## Roadmap
-
-1. Rebuild around the studio's full teaching system (weekly cards with "Done when" gates, the R and T ladders, threads, the family loop). See `docs/prompts/teaching-system-brief.md`.
-2. Supabase sync: teacher sign-in, students join with a code, scores appear on the dashboard automatically.
-3. Multi-studio accounts if Bravissimo is offered to other teachers.
-
-## Credits and licence
-
-Music glyphs are outlines from [Bravura](https://github.com/steinbergmedia/bravura) © Steinberg Media Technologies, SIL Open Font License 1.1 (`public/licenses/Bravura-OFL.txt`).
-Level Up is the Expressions Music Academy program; its codes and point rules are used as the studio runs them.
-No licence has been chosen for Bravissimo itself yet, so all rights are reserved.
