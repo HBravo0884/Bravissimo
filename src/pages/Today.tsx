@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useData } from "../data/store";
-import { currentWeek, nameOf, roster, teachingDaysInUse } from "../data/select";
+import { currentWeek, nameOf, openSlots, roster, teachingDaysInUse } from "../data/select";
 import { startLesson } from "../data/actions";
 import { owedPromises } from "../../shared/board";
 import { retestQueue, skillLabel } from "../../shared/ladders";
@@ -27,6 +27,7 @@ export function Today({ date }: { date?: string }) {
   // With no date asked for, show today if it is a teaching day, otherwise the next one.
   const day = date ?? (days.includes(weekdayOf(today)) ? today : days.map((d) => nextWeekday(d, today)).sort()[0] ?? today);
   const slots = useMemo(() => roster({ students }, day), [students, day]);
+  const open = useMemo(() => openSlots({ students }, day), [students, day]);
   const weekday = weekdayOf(day);
   const nextDays = days.map((d) => nextWeekday(d, addDays(day, 1))).sort();
 
@@ -38,7 +39,8 @@ export function Today({ date }: { date?: string }) {
           <h1>{longDate(day)}</h1>
           <p className="muted">
             {slots.length} {slots.length === 1 ? "lesson" : "lessons"}
-            {slots[0]?.location ? `, ${slots[0].location}` : ""}. The schedule here is the regular roster; Opus1 has the truth for make-ups and cancellations.
+            {slots[0]?.location ? `, ${slots[0].location}` : ""}
+            {open.length > 0 ? `; open at ${open.map((o) => (o.times[0] ? clockLabel(o.times[0]) : "a slot")).join(", ")}` : ""}. The schedule here is the regular roster; Opus1 has the truth for make-ups and cancellations.
           </p>
         </div>
         <div className="row-wrap">
@@ -156,6 +158,12 @@ export function Today({ date }: { date?: string }) {
                       </div>
                     )}
                     {!week && <p className="small muted">No sheet yet. <a href={href(`/s/${s.id}`)}>Start one</a>.</p>}
+                    {s.notes.trim() && (
+                      <details className="tracker-note small">
+                        <summary>From the tracker</summary>
+                        <p className="pre-line">{s.notes}</p>
+                      </details>
+                    )}
                   </div>
                 )}
               </li>

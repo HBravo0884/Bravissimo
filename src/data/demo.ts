@@ -45,6 +45,14 @@ function student(i: number, over: Partial<Student>): Student {
     adultName: "",
     familyKey: `demo${letter}${"x".repeat(20)}`,
     familyKeyOn: "",
+    notes: "",
+    warmFuzzy: "",
+    earTraining: "",
+    focus: "",
+    repStatus: "",
+    rank: "",
+    acquired: [],
+    trackerChallenges: [],
     ...over,
   };
 }

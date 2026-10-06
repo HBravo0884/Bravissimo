@@ -47,8 +47,35 @@ export function emptyData(): Data {
   return Object.fromEntries(COLLECTION_NAMES.map((c) => [c, []])) as unknown as Data;
 }
 
+/**
+ * A private copy of a real studio, handed to the page before the app starts
+ * (`window.__BRAVISSIMO_STUDIO__`). It stands in for the invented demo: kept
+ * on this device, never sent to Notion or a family. Nothing in the code holds
+ * one; it is only ever put into a private build.
+ */
+export interface StudioSnapshot {
+  label: string;
+  takenOn: string;
+  data: Partial<Data>;
+}
+
+export function studioSnapshot(): StudioSnapshot | null {
+  const s = (globalThis as { __BRAVISSIMO_STUDIO__?: unknown }).__BRAVISSIMO_STUDIO__ as StudioSnapshot | undefined;
+  return s && typeof s === "object" && s.data && typeof s.data === "object" ? s : null;
+}
+
+/** What the local studio starts from: the snapshot when there is one, otherwise the invented demo. */
+function seedData(): Data {
+  const snap = studioSnapshot();
+  if (!snap) return demoData();
+  const data = emptyData();
+  for (const c of COLLECTION_NAMES) if (Array.isArray(snap.data[c])) (data[c] as unknown[]) = structuredClone(snap.data[c]) as unknown[];
+  return data;
+}
+
 function dataKey(mode: Mode) {
-  return `bravissimo.v2.${mode}`;
+  const snap = mode === "demo" ? studioSnapshot() : null;
+  return snap ? `bravissimo.v2.snapshot.${snap.takenOn}` : `bravissimo.v2.${mode}`;
 }
 
 /** Collections that change often enough to re-check every minute. */
@@ -96,7 +123,7 @@ export function createStore(storage: StorageLike | null, fetcher: Fetcher | null
     } catch {
       /* a damaged cache: start clean, Notion still has everything */
     }
-    if (m === "demo") base.data = demoData();
+    if (m === "demo") base.data = seedData();
     return base;
   }
 
@@ -450,7 +477,7 @@ export function createStore(storage: StorageLike | null, fetcher: Fetcher | null
 
     resetDemo() {
       if (mode !== "demo") return;
-      persisted = { data: demoData(), outbox: [], at: {}, fullAt: {} };
+      persisted = { data: seedData(), outbox: [], at: {}, fullAt: {} };
       save();
       emit();
     },

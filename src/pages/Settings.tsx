@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { apiBase, store, useData, useSync } from "../data/store";
-import { fromRecord, displayNameOf, type RecordJSON } from "../../shared/records";
+import { apiBase, store, studioSnapshot, useData, useSync } from "../data/store";
+import { fromRecord, matchRecord, recordChallenges, type RecordJSON } from "../../shared/records";
+import type { Student } from "../../shared/types";
 import { isoDate } from "../../shared/dates";
 import { weekTitle } from "../data/actions";
 import { Icon, Segmented } from "../components/ui";
@@ -32,6 +33,7 @@ export function SettingsPage({ theme, onTheme, signInFirst }: { theme: Theme; on
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<{ databases: Record<string, boolean>; missing: string[] } | null>(null);
   const [report, setReport] = useState<SetupReport | null>(null);
+  const snap = studioSnapshot();
 
   useEffect(() => {
     callApi("/status", "GET")
@@ -89,14 +91,16 @@ export function SettingsPage({ theme, onTheme, signInFirst }: { theme: Theme; on
             label="Where the record lives"
             value={sync.mode}
             options={[
-              { id: "demo", label: "Demo studio" },
+              { id: "demo", label: snap ? "This snapshot" : "Demo studio" },
               { id: "notion", label: "Notion" },
             ]}
             onChange={(m) => store.connect(m, m === "notion" ? key : "")}
           />
           <p className="muted small">
             {sync.mode === "demo"
-              ? "Invented students, kept on this device only. Nothing reaches Notion or a family."
+              ? snap
+                ? "A copy of your studio, kept on this device only. Nothing reaches Notion or a family."
+                : "Invented students, kept on this device only. Nothing reaches Notion or a family."
               : "Your Notion Student tracker. Changes save on this device first and reach Notion when there is a connection."}
           </p>
         </section>
@@ -175,11 +179,15 @@ export function SettingsPage({ theme, onTheme, signInFirst }: { theme: Theme; on
 
       {!signInFirst && sync.mode === "demo" && (
         <section className="card pad stack-sm">
-          <h2>Demo studio</h2>
-          <p className="muted small">Eight invented students with this week's sheets, lessons, threads and promises. Try anything; reset when you like.</p>
+          <h2>{snap ? snap.label : "Demo studio"}</h2>
+          <p className="muted small">
+            {snap
+              ? `Taken ${snap.takenOn}. Changes stay on this device and never reach Notion or a family. Try anything; reset when you like.`
+              : "Eight invented students with this week's sheets, lessons, threads and promises. Try anything; reset when you like."}
+          </p>
           <div className="btn-row">
-            <button className="btn btn-sm" type="button" onClick={() => window.confirm("Put the demo studio back the way it started?") && store.resetDemo()}>
-              Reset the demo
+            <button className="btn btn-sm" type="button" onClick={() => window.confirm(snap ? "Put the snapshot back the way it was taken?" : "Put the demo studio back the way it started?") && store.resetDemo()}>
+              {snap ? "Reset the snapshot" : "Reset the demo"}
             </button>
           </div>
         </section>
@@ -258,20 +266,21 @@ function SetupResult({ report }: { report: SetupReport }) {
   );
 }
 
-/** The one-time import of the latest records JSON, matched to students by name. */
+/** The import of the latest records packs: each entry becomes that student's sheet for the date, with its open challenges. */
 function ImportRecords() {
   const students = useData("students");
+  const weeks = useData("weeks");
+  const challenges = useData("challenges");
   const [entries, setEntries] = useState<Partial<RecordJSON>[]>([]);
   const [date, setDate] = useState(isoDate());
   const [done, setDone] = useState("");
-  const match = (e: Partial<RecordJSON>) => {
-    const n = (e.name ?? "").trim().toLowerCase();
-    return students.find((s) => displayNameOf(s).toLowerCase() === n || s.name.toLowerCase() === n || s.name.toLowerCase().split(/\s+/)[0] === n);
-  };
   return (
     <section className="card pad stack-sm">
       <h2>Import a records file</h2>
-      <p className="muted small">A students_*.json pack from the weekly generator. Each entry becomes that student's sheet for the date below, marked printed. The file stays on this device.</p>
+      <p className="muted small">
+        A students_*.json pack from the weekly run, or a one-student revision. Each entry becomes that student's sheet for the date below, marked printed, with its open challenges. Students are found by
+        the name on the sheet, then by the slot. The file stays on this device.
+      </p>
       <div className="row-wrap">
         <input
           className="input"
@@ -306,10 +315,19 @@ function ImportRecords() {
         <>
           <ul className="plain small">
             {entries.map((e, i) => {
-              const s = match(e);
+              const m = matchRecord(e, students);
               return (
                 <li key={i}>
-                  {e.name ?? "(no name)"}: {s ? <b>{displayNameOf(s)}</b> : <span className="pill pill-warn">no matching student</span>}
+                  {e.name ?? "(no name)"}
+                  {e.slot ? <span className="muted">, {e.slot}</span> : null}:{" "}
+                  {m ? (
+                    <>
+                      <b>{m.student.name}</b>
+                      {m.by === "slot" && <span className="muted"> (by slot; the sheet's name is kept as the name on the sheet)</span>}
+                    </>
+                  ) : (
+                    <span className="pill pill-warn">no matching student</span>
+                  )}
                 </li>
               );
             })}
@@ -320,22 +338,47 @@ function ImportRecords() {
             onClick={() => {
               let n = 0;
               for (const e of entries) {
-                const s = match(e);
-                if (!s) continue;
+                const m = matchRecord(e, students);
+                if (!m) continue;
+                const s = m.student;
+                const patch: Partial<Student> = {};
+                if (e.lang === "es" && s.lang !== "es") patch.lang = "es";
+                if (e.accent && !s.accent) patch.accent = e.accent;
+                if (m.by === "slot" && e.name?.trim() && e.name.trim() !== s.name.trim() && !s.displayName) patch.displayName = e.name.trim();
+                if (Object.keys(patch).length) store.update("students", s.id, patch);
+                // The block's challenges: an open one with the same code is the same challenge.
+                const open = challenges.filter((c) => c.student === s.id && c.state === "open");
+                const ids = recordChallenges(e).map((rc) => {
+                  const have = open.find((c) => c.code.toLowerCase() === rc.code.toLowerCase());
+                  if (have) return have.id;
+                  const minutes = /(\d+)\s*(minutes|minutos)/i.exec(rc.name);
+                  return store.create("challenges", {
+                    student: s.id,
+                    name: rc.name,
+                    code: rc.code,
+                    points: rc.points,
+                    state: "open",
+                    criterion: "",
+                    blocks: 0,
+                    minutesGoal: minutes ? Number(minutes[1]) : null,
+                    openedOn: date,
+                    completedOn: "",
+                    inNotebook: false,
+                  }).id;
+                });
+                const edition = Math.max(0, ...weeks.filter((w) => w.student === s.id && w.date === date).map((w) => w.edition)) + 1;
                 store.create(
                   "weeks",
-                  { student: s.id, date, status: "printed", edition: 1, builtFrom: "lesson", sheet: fromRecord(e), ticks: [], notes: [], listening: [], gotIt: {}, seen: "" },
+                  { student: s.id, date, status: "printed", edition, builtFrom: "lesson", sheet: { ...fromRecord(e), challenges: ids }, ticks: [], notes: [], listening: [], gotIt: {}, seen: "" },
                   weekTitle(s, date),
                 );
-                if (e.lang === "es" && s.lang !== "es") store.update("students", s.id, { lang: "es" });
-                if (e.accent && !s.accent) store.update("students", s.id, { accent: e.accent });
                 n++;
               }
-              setDone(`Imported ${n} sheets.`);
+              setDone(`Imported ${n} ${n === 1 ? "sheet" : "sheets"}.`);
               setEntries([]);
             }}
           >
-            Import {entries.filter((e) => match(e)).length} sheets
+            Import {entries.filter((e) => matchRecord(e, students)).length} sheets
           </button>
         </>
       )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blankCard, blankSheet, blankWeek, copyForward, fromRecord, practiceDays, sheetProblems, toRecord, toggleTick, voiceProblems, packFileName } from "./records";
+import { blankCard, blankSheet, blankWeek, copyForward, fromRecord, isOpenSlot, isStudentRow, matchRecord, practiceDays, recordChallenges, sheetProblems, slotLabel, toRecord, toggleTick, voiceProblems, packFileName } from "./records";
 import { familyView } from "./family";
 import { board, reportsDue } from "./board";
 import { rungStates, skillResults, skillsCheckComplete, neighbours, readyRungs } from "./ladders";
@@ -41,6 +41,14 @@ function student(over: Partial<Student> = {}): Student {
     adultName: "",
     familyKey: "k".repeat(24),
     familyKeyOn: "",
+    notes: "",
+    warmFuzzy: "",
+    earTraining: "",
+    focus: "",
+    repStatus: "",
+    rank: "",
+    acquired: [],
+    trackerChallenges: [],
     ...over,
   };
 }
@@ -90,7 +98,8 @@ describe("the records JSON", () => {
       "name", "slot", "level", "accent", "lang", "wins", "song", "song_note", "last", "cards", "routine", "keep",
       "challenges", "chal_note", "playlist", "listen", "quiz", "fig", "fig_song", "fig_label", "qr_song", "qr2", "qr3", "noqr_text", "adult_note",
     ]);
-    expect(r.name).toBe("Student");
+    // The packs print the full name.
+    expect(r.name).toBe("Student A Example");
     expect(r.slot).toBe("Monday 4:30, Annandale");
     expect(r.level).toBe("");
     expect(r.routine[0]).toBe("5 min five-finger pattern in C, each hand");
@@ -129,7 +138,67 @@ describe("the records JSON", () => {
   });
 
   it("names the pack the way the run does", () => {
-    expect(packFileName("Monday", "2026-10-05")).toBe("students_monday05oct.json");
+    expect(packFileName("Monday", "2026-10-05")).toBe("students_mon05oct.json");
+    expect(packFileName("Saturday", "2026-10-03")).toBe("students_sat03oct.json");
+  });
+
+  it("keeps a detail written as lines, and every win, through a round trip", () => {
+    const entry = toRecord(student(), week(), challenges);
+    entry.cards[0].d = ["Bar 7: line 2, the third bar.", "Left hand alone first."];
+    entry.wins = ["One.", "Two.", "Three."];
+    const back = fromRecord(entry);
+    expect(back.cards[0].d).toBe("Bar 7: line 2, the third bar.\nLeft hand alone first.");
+    expect(back.wins).toHaveLength(3);
+    const again = toRecord(student(), week({ sheet: { ...goodSheet(), ...back, challenges: ["c1", "c2"] } }), challenges);
+    expect(again.cards[0].d).toEqual(["Bar 7: line 2, the third bar.", "Left hand alone first."]);
+    expect(again.wins).toEqual(["One.", "Two.", "Three."]);
+    expect(sheetProblems(back, student()).find((p) => p.where === "Recent wins")?.level).toBe("warn");
+  });
+
+  it("lets a title in capitals and the book's Rhythm Level pages through", () => {
+    const texts = (sh: Sheet) => sheetProblems(sh, student()).map((p) => `${p.where}: ${p.text}`);
+    expect(texts(goodSheet({ song: "A SONG TITLE, from a musical" }))).not.toContain("Song: has a word in all caps");
+    expect(texts(goodSheet({ keep: { t: "The Rhythm Level 2 pages", d: "Counted out loud." } })).some((t) => t.includes("mentions a level"))).toBe(false);
+    expect(texts(goodSheet({ keep: { t: "Level 2 pieces", d: "Once each." } })).some((t) => t.includes("mentions a level"))).toBe(true);
+    expect(toRecord(student(), week({ sheet: goodSheet({ fig: "" }) }), challenges).fig).toBeNull();
+  });
+
+  it("reads the challenges block of an entry", () => {
+    expect(recordChallenges({ challenges: [["Attend 20 lessons", "LA 1a", "50"], ["A packet with no points yet", "ET 1b", ""], ["", "", ""]] })).toEqual([
+      { name: "Attend 20 lessons", code: "LA 1a", points: 50 },
+      { name: "A packet with no points yet", code: "ET 1b", points: null },
+    ]);
+  });
+});
+
+describe("the tracker's rows and slots", () => {
+  it("prints the slot in the sheet's language, and an hour as a range", () => {
+    expect(slotLabel(student({ lang: "es", slots: ["Thursday 8"], times: ["6:30 PM"] }), "Thursday")).toBe("Jueves 6:30, Annandale");
+    expect(slotLabel(student({ slots: ["Thursday  11"], times: ["8:00 PM"], sessions: ["60"] }), "Thursday")).toBe("Thursday 8:00 to 9:00, Annandale");
+  });
+
+  it("tells a student from a row that only holds a slot", () => {
+    expect(isStudentRow(student())).toBe(true);
+    expect(isStudentRow(student({ name: "Open", status: "" }))).toBe(false);
+    expect(isStudentRow(student({ name: "Unavailable", status: "" }))).toBe(false);
+    expect(isStudentRow(student({ name: "Student B Example (duplicate 9/4 - safe to delete)", status: "" }))).toBe(false);
+    expect(isStudentRow(student({ name: "Student C Example", status: "" }))).toBe(false);
+    expect(isOpenSlot(student({ name: "Open", status: "" }))).toBe(true);
+  });
+
+  it("finds the student for a records entry by name, then by slot", () => {
+    const a = student({ id: "a", name: "Student A Example", slots: ["Monday 3"], times: ["4:00 PM"] });
+    const b = student({ id: "b", name: "Student B Example", slots: ["Thursday 8"], times: ["6:30 PM"] });
+    const c = student({ id: "c", name: "Student C Other", slots: ["Monday 4"], times: ["4:30 PM"] });
+    const open = student({ id: "o", name: "Open", status: "", slots: ["Monday 3"], times: ["4:00 PM"] });
+    const all = [a, b, c, open];
+    expect(matchRecord({ name: "Student B Example" }, all)?.student.id).toBe("b");
+    // A sheet that prints another name for the person in that slot.
+    expect(matchRecord({ name: "Somebody Else", slot: "Monday 4:00, Annandale" }, all)).toEqual({ student: a, by: "slot" });
+    // The Spanish day name and an hour's range still find the slot.
+    expect(matchRecord({ name: "Nadie", slot: "Jueves 6:30 a 7:30, Annandale" }, all)?.student.id).toBe("b");
+    // A first name two students share is not enough on its own.
+    expect(matchRecord({ name: "Student" }, all)).toBeNull();
   });
 });
 

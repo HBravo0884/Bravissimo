@@ -164,7 +164,9 @@ export function voiceProblems(text: string, where: string): Problem[] {
   if (EMOJI.test(text)) out.push({ level: "error", where, text: "has an emoji" });
   if (SHOUT.test(text.replace(/\b(?:PDF|BPM|MIDI|ARCT|URL)\b/g, ""))) out.push({ level: "warn", where, text: "has a word in all caps" });
   if (/\bMr\.?\s+Hector\b/i.test(text)) out.push({ level: "error", where, text: "says Mr. Hector" });
-  if (/\blevel\s*(up\s*)?\d/i.test(text) || /\b(white|yellow|orange) belt\b/i.test(text)) out.push({ level: "warn", where, text: "mentions a level; no level is printed anywhere" });
+  // "Rhythm Level 2" names pages in the theory book, not a student's level.
+  const levelText = text.replace(/\brhythm level\s*\d+/gi, "");
+  if (/\blevel\s*(up\s*)?\d/i.test(levelText) || /\b(white|yellow|orange) belt\b/i.test(levelText)) out.push({ level: "warn", where, text: "mentions a level; no level is printed anywhere" });
   return out;
 }
 
@@ -190,7 +192,7 @@ export function sheetProblems(sheet: Sheet, student?: Pick<Student, "pointsMode"
     ] as const)
       out.push(...voiceProblems(v, `${where} ${k}`));
   });
-  if (sheet.wins.length > 2) out.push({ level: "error", where: "Recent wins", text: "holds more than two lines" });
+  if (sheet.wins.length > 2) out.push({ level: "warn", where: "Recent wins", text: "holds more than two lines" });
   sheet.wins.forEach((w, i) => out.push(...voiceProblems(w, `Win ${i + 1}`)));
   const total = routineTotal(sheet.routine);
   if (!sheet.routine.length) out.push({ level: "error", where: "Routine", text: "is empty" });
@@ -206,7 +208,8 @@ export function sheetProblems(sheet: Sheet, student?: Pick<Student, "pointsMode"
     ["Keep it alive", `${sheet.keep.t} ${sheet.keep.d}`],
     ["Challenge note", sheet.chalNote],
   ] as const)
-    out.push(...voiceProblems(v, k));
+    // A title or an artist can be in capitals (EPIC, JVKE); that is the name, not shouting.
+    out.push(...voiceProblems(v, k).filter((p) => !(k === "Song" && p.text === "has a word in all caps")));
   if (!sheet.song.trim()) out.push({ level: "warn", where: "Song", text: "no current song" });
   if (!sheet.keep.t.trim()) out.push({ level: "warn", where: "Keep it alive", text: "is empty; what the lesson did not touch belongs here" });
   if (sheet.adultNote) {
@@ -238,7 +241,7 @@ export interface RecordJSON {
   song: string;
   song_note: string;
   last: string;
-  cards: { code: string; t: string; d: string; done: string; still: string; book?: string }[];
+  cards: { code: string; t: string; d: string | string[]; done: string; still: string; book?: string }[];
   routine: string[];
   keep: { t: string; d: string };
   challenges: [string, string, string][];
@@ -246,7 +249,7 @@ export interface RecordJSON {
   playlist: string;
   listen: boolean;
   quiz: unknown;
-  fig: string;
+  fig: string | null;
   fig_song: string;
   fig_label: string;
   qr_song: QR;
@@ -256,15 +259,57 @@ export interface RecordJSON {
   adult_note: { t: string; d: string | string[] } | null;
 }
 
+/**
+ * The name on the sheet: the display name when one is set, otherwise the full
+ * tracker name. The packs print full names, and first names alone collide
+ * (two students can share one).
+ */
 export function displayNameOf(s: Pick<Student, "displayName" | "name">): string {
-  return s.displayName.trim() || s.name.trim().split(/\s+/)[0] || s.name;
+  return s.displayName.trim() || s.name.trim();
 }
 
-/** "Monday 4:30, Annandale" from the Notion slot, time and location. */
-export function slotLabel(s: Pick<Student, "slots" | "times" | "location">, day?: string): string {
+const PLACEHOLDER_NAME = /^(open|unavailable)$/i;
+
+/**
+ * A row in the Students table that is a person. The tracker also holds rows
+ * that keep a slot ("Open", "Unavailable") and duplicates marked for deletion;
+ * those have no status and are never a student.
+ */
+export function isStudentRow(s: Pick<Student, "name" | "status">): boolean {
+  const name = s.name.trim();
+  return !!name && !PLACEHOLDER_NAME.test(name) && !/\(duplicate/i.test(name) && ["Active", "Pause", "Discontinued"].includes(s.status);
+}
+
+/** A slot the tracker holds open: a row named "Open". */
+export function isOpenSlot(s: Pick<Student, "name">): boolean {
+  return /^open$/i.test(s.name.trim());
+}
+
+const DAY_ES: Record<string, string> = {
+  Monday: "Lunes",
+  Tuesday: "Martes",
+  Wednesday: "Miércoles",
+  Thursday: "Jueves",
+  Friday: "Viernes",
+  Saturday: "Sábado",
+  Sunday: "Domingo",
+};
+
+/**
+ * "Monday 4:30, Annandale" from the Notion slot, time and location, as the
+ * packs print it: the day in the sheet's language ("Jueves 6:30, Annandale"),
+ * and an hour lesson as a range ("Thursday 8:00 to 9:00, Annandale").
+ */
+export function slotLabel(s: Pick<Student, "slots" | "times" | "location"> & Partial<Pick<Student, "sessions" | "lang">>, day?: string): string {
   const slot = (day ? s.slots.find((x) => x.startsWith(day)) : s.slots[0]) ?? s.slots[0] ?? "";
-  const dayName = slot.split(/\s+/)[0] ?? "";
-  const time = s.times[0] ? clockLabel(s.times[0]) : "";
+  const dayEn = slot.split(/\s+/)[0] ?? "";
+  const dayName = s.lang === "es" ? (DAY_ES[dayEn] ?? dayEn) : dayEn;
+  let time = s.times[0] ? clockLabel(s.times[0]) : "";
+  if (time && s.sessions?.includes("60")) {
+    const end = minutesOfTime(s.times[0]) + 60;
+    const h = Math.floor(end / 60) % 12 || 12;
+    time = `${time} ${s.lang === "es" ? "a" : "to"} ${h}:${String(end % 60).padStart(2, "0")}`;
+  }
   const left = [dayName, time].filter(Boolean).join(" ");
   return [left, s.location].filter(Boolean).join(", ");
 }
@@ -291,7 +336,7 @@ export function toRecord(student: Student, week: Week, challenges: StudentChalle
     level: "",
     accent: student.accent,
     lang,
-    wins: sheet.wins.slice(0, 2),
+    wins: sheet.wins,
     song: sheet.song,
     song_note: sheet.songNote,
     last: sheet.last,
@@ -299,7 +344,8 @@ export function toRecord(student: Student, week: Week, challenges: StudentChalle
       const card: RecordJSON["cards"][number] = {
         code: plays ? c.code : "",
         t: c.t,
-        d: c.d,
+        // A detail kept as separate lines goes back out as the list the generator prints line by line.
+        d: c.d.includes("\n") ? c.d.split("\n") : c.d,
         done: c.done,
         // The export writes `still` from Still true when, or else from the carry-over date, in the sheet's language.
         still: c.still.trim() || carriedTag(c.carriedFrom, lang),
@@ -320,7 +366,8 @@ export function toRecord(student: Student, week: Week, challenges: StudentChalle
     playlist: sheet.playlist || student.playlist,
     listen: sheet.listen,
     quiz: sheet.quiz ?? null,
-    fig: sheet.fig,
+    // The packs write null when a sheet has no figure.
+    fig: sheet.fig || null,
     fig_song: sheet.figSong,
     fig_label: sheet.figLabel,
     qr_song: sheet.qrSong,
@@ -334,7 +381,8 @@ export function toRecord(student: Student, week: Week, challenges: StudentChalle
 /** Reads a records JSON entry back into a sheet (the one-time import of the latest packs). */
 export function fromRecord(r: Partial<RecordJSON>): Sheet {
   const sheet = blankSheet();
-  sheet.wins = Array.isArray(r.wins) ? r.wins.slice(0, 2) : [];
+  // Kept as written: a real sheet can carry a third win, and the check says so rather than the import dropping it.
+  sheet.wins = Array.isArray(r.wins) ? r.wins.map(String) : [];
   sheet.song = r.song ?? "";
   sheet.songNote = r.song_note ?? "";
   sheet.last = r.last ?? "";
@@ -343,7 +391,7 @@ export function fromRecord(r: Partial<RecordJSON>): Sheet {
       const card = blankCard();
       card.code = ((CODES as readonly string[]).includes(c.code) ? c.code : "") as Card["code"];
       card.t = c.t ?? "";
-      card.d = c.d ?? "";
+      card.d = Array.isArray(c.d) ? c.d.map(String).join("\n") : (c.d ?? "");
       card.done = c.done ?? "";
       const still = c.still ?? "";
       // The old records carry the carry-over tag inside `still`; keep it as text so nothing is lost.
@@ -369,9 +417,55 @@ export function fromRecord(r: Partial<RecordJSON>): Sheet {
   return sheet;
 }
 
-/** The pack file name the generator expects: students_<day><ddmon>.json, e.g. students_monday05oct.json. */
+/** The pack file name the run uses: students_<day><ddmon>.json with a three-letter day, e.g. students_mon05oct.json. */
 export function packFileName(day: string, iso: string): string {
   const [, m, d] = iso.split("-").map(Number);
   const mon = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"][m - 1];
-  return `students_${day.toLowerCase()}${String(d).padStart(2, "0")}${mon}.json`;
+  return `students_${day.slice(0, 3).toLowerCase()}${String(d).padStart(2, "0")}${mon}.json`;
+}
+
+const DAY_FROM_ES: Record<string, string> = Object.fromEntries(Object.entries(DAY_ES).map(([en, es]) => [es.toLowerCase(), en.toLowerCase()]));
+
+/** A slot label reduced to day, start time and place, so "Jueves 6:30" and "Thursday 6:30" agree and an hour's range does not matter. */
+export function slotKey(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/^[^\s,]+/, (d) => DAY_FROM_ES[d] ?? d)
+    .replace(/\s+(to|a)\s+\d{1,2}:\d{2}/, "")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Which student a records entry belongs to: by the name on the sheet, then by
+ * a first name no one else has, then by the slot (the sheet can print a name
+ * the tracker does not use).
+ */
+export function matchRecord(r: Partial<RecordJSON>, students: Student[]): { student: Student; by: "name" | "slot" } | null {
+  const people = students.filter((s) => isStudentRow(s) && s.status !== "Discontinued");
+  const n = (r.name ?? "").trim().toLowerCase();
+  if (n) {
+    const exact = people.find((s) => displayNameOf(s).toLowerCase() === n || s.name.trim().toLowerCase() === n);
+    if (exact) return { student: exact, by: "name" };
+    const first = people.filter((s) => s.name.trim().toLowerCase().split(/\s+/)[0] === n);
+    if (first.length === 1) return { student: first[0], by: "name" };
+  }
+  const want = slotKey(r.slot ?? "");
+  if (want) {
+    const bySlot = people.filter((s) => teachingDays(s).some((d) => slotKey(slotLabel(s, d)) === want));
+    if (bySlot.length === 1) return { student: bySlot[0], by: "slot" };
+  }
+  return null;
+}
+
+/** The open challenges a records entry prints, as name, code and points. */
+export function recordChallenges(r: Partial<RecordJSON>): { name: string; code: string; points: number | null }[] {
+  if (!Array.isArray(r.challenges)) return [];
+  return r.challenges
+    .filter((c) => Array.isArray(c) && c.length >= 2)
+    .map(([name, code, points]) => {
+      const n = Number(points);
+      return { name: String(name ?? ""), code: String(code ?? "").trim(), points: String(points ?? "").trim() && Number.isFinite(n) ? n : null };
+    })
+    .filter((c) => c.code);
 }

@@ -251,6 +251,14 @@ export function fakeTracker(): { notion: FakeNotion; root: string; students: str
     "Creative Challenge": p("rich_text"),
     "Experience level": p("multi_select"),
     Folder: p("url"),
+    Text: p("rich_text"),
+    "Warm-Fuzzy Log": p("rich_text"),
+    "Ear Training": p("rich_text"),
+    "Current Focus": p("select"),
+    "Repertoire Status": p("select"),
+    "Level Up Rank": p("select"),
+    "🎒 Acquired Skills": p("multi_select"),
+    "🎯 Current Challenges": p("multi_select"),
   });
   const threads = notion.addDatabase("Threads", root, {
     Name: p("title"),

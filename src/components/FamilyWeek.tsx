@@ -74,7 +74,7 @@ export function FamilyWeek({ view, actions, pending, gamesHref }: { view: Family
                   <h3>{c.t}</h3>
                   {c.youPick && <span className="pill">{L.youPick}</span>}
                 </div>
-                {c.d && <p>{c.d}</p>}
+                {c.d && <p className="pre-line">{c.d}</p>}
                 {c.done && (
                   <p>
                     <b>{L.doneWhen}</b> {c.done}

@@ -17,7 +17,7 @@ Rungs, Skills Check, Resources) on a Bravissimo page inside the tracker.
 | Today | teacher, phone in the room | The day in slot order with Ask first, the Done when lines and Check before you teach (promises owed, retests, flags, what the family wrote). One tap starts a lesson and stamps the time for the room recording. |
 | Lesson capture | teacher, one hand | Met, not yet or not tried per card; quick adds for a win, a promise, a parent ask, a recital piece, a criterion, a note. |
 | Week editor | teacher, Mac | Four cards, the routine, Keep it alive, wins, song, codes, the note to the adult. Copies last week forward with carried-over tags in the sheet's language. Runs the build script's checks (four cards, codes in the fifteen, no item under five minutes, totals 15/20/25/30, no dash, no exclamation mark, no emoji, no level). |
-| Records file | teacher | Exports `students_<day><ddmon>.json` exactly as the Python sheet generator reads it. Opt-outs get no codes, no points and no challenges block. |
+| Records file | teacher | Exports `students_<day><ddmon>.json` (for example `students_mon05oct.json`) exactly as the Python sheet generator reads it. Opt-outs get no codes, no points and no challenges block. Settings imports a pack or a one-student revision back: each entry finds its student by the name on the sheet, then by the slot, and brings its open challenges. |
 | Board | teacher | Never reported, then stale, then fresh, with flags: no current piece, no open challenge, promises owed, no lesson record, practice days trending down, threads untouched for three weeks. |
 | Student record | teacher | Week, ladders with the Skills Check (prompt sets A and B, retest queue, 60 and 40 point credits), challenges (templates, criterion, blocks, app minutes), repertoire, lesson history, profile and the family link. |
 | Lessons, threads, promises, reports | teacher | The lesson record review, threads with What we are watching and Next move, promises until kept, and the reports desk (who is due, drafts from lesson records only, the voice check, copy for Opus1, a posted tick only the teacher sets). |
@@ -75,6 +75,14 @@ Notion: Student tracker + Bravissimo page
 - No student data is in this repository. The demo studio uses invented names,
   and the studio's own content (the ladders, the Skills Check items, the
   checked tools) lives in Notion, not in the code.
+- The app reads the tracker's own columns as they are (Text, Current Focus,
+  Repertoire Status, Ear Training, Warm-Fuzzy Log, Level Up Rank, the skills
+  and challenge lists), teacher only. Rows that hold a slot ("Open",
+  "Unavailable") or are marked as duplicates are never treated as students.
+- A private build can be handed a copy of the studio before the app starts
+  (`window.__BRAVISSIMO_STUDIO__`, with `label`, `takenOn` and `data`); it
+  stands in for the demo on that device and is never sent anywhere. No such
+  copy is ever committed.
 - The family link shows one student's family-visible week and nothing else;
   resetting it stops the old link. The service worker never caches `/api/`.
 - Keys live in Netlify environment variables.

@@ -1,4 +1,4 @@
-import { displayNameOf, slotOrder, teachingDays } from "../../shared/records";
+import { displayNameOf, isOpenSlot, isStudentRow, slotOrder, teachingDays } from "../../shared/records";
 import { isoDate, weekdayOf } from "../../shared/dates";
 import type { Lesson, Student, Week } from "../../shared/types";
 import type { Data } from "./store";
@@ -26,8 +26,14 @@ export function currentWeek(data: Pick<Data, "weeks">, student: string, onOrBefo
 export function roster(data: Pick<Data, "students">, date: string): Student[] {
   const day = weekdayOf(date);
   return data.students
-    .filter((s) => s.status !== "Discontinued" && teachingDays(s).includes(day))
+    .filter((s) => isStudentRow(s) && s.status !== "Discontinued" && teachingDays(s).includes(day))
     .sort((a, b) => slotOrder(a, day) - slotOrder(b, day) || nameOf(a).localeCompare(nameOf(b)));
+}
+
+/** The slots the tracker holds open on this weekday, in order, as clock times. */
+export function openSlots(data: Pick<Data, "students">, date: string): Student[] {
+  const day = weekdayOf(date);
+  return data.students.filter((s) => isOpenSlot(s) && teachingDays(s).includes(day)).sort((a, b) => slotOrder(a, day) - slotOrder(b, day));
 }
 
 export const DAYS = ["Monday", "Thursday", "Saturday"] as const;
@@ -35,10 +41,10 @@ export const DAYS = ["Monday", "Thursday", "Saturday"] as const;
 /** Every teaching day in use, in week order. */
 export function teachingDaysInUse(data: Pick<Data, "students">): string[] {
   const order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-  const used = new Set(data.students.flatMap((s) => teachingDays(s)));
+  const used = new Set(data.students.filter((s) => isStudentRow(s) && s.status !== "Discontinued").flatMap((s) => teachingDays(s)));
   return order.filter((d) => used.has(d));
 }
 
 export function activeStudents(data: Pick<Data, "students">): Student[] {
-  return data.students.filter((s) => s.status !== "Discontinued").sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  return data.students.filter((s) => isStudentRow(s) && s.status !== "Discontinued").sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
 }

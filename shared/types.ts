@@ -74,6 +74,23 @@ export interface Student extends Base {
   /** The private family link token. Teacher only. */
   familyKey: string;
   familyKeyOn: string;
+  // What the tracker already keeps about the student, read as it is. Teacher only, never on a family view.
+  /** Notion `Text`: the running note, usually opening with "NOW:". */
+  notes: string;
+  /** Notion `Warm-Fuzzy Log`. */
+  warmFuzzy: string;
+  /** Notion `Ear Training`. */
+  earTraining: string;
+  /** Notion `Current Focus`. */
+  focus: string;
+  /** Notion `Repertoire Status`: Front Burner, Back Burner, Polished, Dragon Music. */
+  repStatus: string;
+  /** Notion `Level Up Rank`. Teacher only. Never printed. */
+  rank: string;
+  /** Notion `🎒 Acquired Skills`. */
+  acquired: string[];
+  /** Notion `🎯 Current Challenges`: the Level Up challenge list as the tracker has it. */
+  trackerChallenges: string[];
 }
 
 export type Outcome = "met" | "not yet" | "not tried" | "";

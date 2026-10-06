@@ -1,5 +1,5 @@
 import { addDays, daysBetween } from "./dates";
-import { displayNameOf, practiceDays } from "./records";
+import { displayNameOf, isStudentRow, practiceDays } from "./records";
 import type { Lesson, PromiseItem, RepertoireItem, Report, Student, StudentChallenge, Thread, Week } from "./types";
 
 export type ReportState = "never" | "stale" | "fresh";
@@ -55,7 +55,7 @@ export function owedPromises(promises: PromiseItem[], student?: string): Promise
 /** The board: every active student, never reported first, then stale, then fresh, with the brief's flags. */
 export function board(data: StudioData, today: string): BoardRow[] {
   const rows = data.students
-    .filter((s) => s.status !== "Discontinued")
+    .filter((s) => isStudentRow(s) && s.status !== "Discontinued")
     .map((s): BoardRow => {
       const lastReport = lastReportDate(s.id, data);
       const reportState: ReportState = !lastReport ? "never" : daysBetween(lastReport, today) > STALE_AFTER_DAYS ? "stale" : "fresh";
@@ -97,7 +97,7 @@ export interface DueReport {
 /** Who is due: every student once a quarter, and a first full report after lesson 3. */
 export function reportsDue(data: Pick<StudioData, "students" | "reports" | "lessons">, today: string): DueReport[] {
   return data.students
-    .filter((s) => s.status === "Active")
+    .filter((s) => isStudentRow(s) && s.status === "Active")
     .map((s): DueReport | null => {
       const last = lastReportDate(s.id, data);
       const lessonCount = data.lessons.filter((l) => l.student === s.id).length;

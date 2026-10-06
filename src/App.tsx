@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { href, useRoute } from "./router";
-import { store, useSync } from "./data/store";
+import { store, studioSnapshot, useSync } from "./data/store";
 import { setMuted } from "./music/audio";
 import { applyTheme, getPref, setPref, type Theme } from "./prefs";
 import { Icon, Logo } from "./components/ui";
@@ -125,7 +125,7 @@ export function App() {
           <Logo />
           <span>Bravissimo</span>
         </a>
-        {sync.mode === "demo" && <span className="pill pill-peach">Demo studio</span>}
+        {sync.mode === "demo" && <span className="pill pill-peach">{studioSnapshot() ? "Snapshot" : "Demo studio"}</span>}
         <nav className="topnav" aria-label="Main">
           {!signedOut &&
             nav.map((n) => (

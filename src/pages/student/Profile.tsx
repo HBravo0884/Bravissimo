@@ -41,7 +41,7 @@ export function Profile({ student }: { student: Student }) {
       <section className="card pad stack">
         <h2>On the sheet</h2>
         <div className="grid-2">
-          <TextField label="Name on the sheet" value={student.displayName} placeholder={student.name.split(/\s+/)[0]} onSave={(v) => up({ displayName: v.trim() })} hint="The name the student goes by." />
+          <TextField label="Name on the sheet" value={student.displayName} placeholder={student.name} onSave={(v) => up({ displayName: v.trim() })} hint="Only when the sheet prints a different name from the tracker. Empty prints the full name." />
           <TextField label="Full name" value={student.name} onSave={(v) => v.trim() && up({ name: v.trim() })} hint="As Opus1 has it; names the playlist." />
           <SelectField label="Sheet language" value={student.lang} options={[{ id: "en", label: "English" }, { id: "es", label: "Spanish" }]} onChange={(v) => up({ lang: v })} />
           <SelectField label="The adult at home reads" value={student.familyLang} options={[{ id: "en", label: "English" }, { id: "es", label: "Spanish" }]} onChange={(v) => up({ familyLang: v })} />
@@ -72,6 +72,36 @@ export function Profile({ student }: { student: Student }) {
           hint={student.pointsMode === "plays for points" ? "Cards carry codes; open challenges sit in one block." : "No codes, no points and no challenges block, on paper and on the family page."}
         />
         <TextField label="Level Up (teacher only, never printed)" value={student.levelUp} onSave={(v) => up({ levelUp: v.trim() })} hint="Assigning a level is your decision alone. Challenge templates use this digit." />
+      </section>
+
+      <section className="card pad stack">
+        <h2>In the tracker</h2>
+        <p className="small muted">What the Student tracker already keeps. Teacher only; none of it reaches the family page or a sheet.</p>
+        <TextField label="Note (Text)" value={student.notes} multiline rows={6} onSave={(v) => up({ notes: v })} hint="The running note, NOW first." />
+        <div className="grid-3">
+          <SelectField label="Current focus" value={student.focus} options={["", "Repertoire", "Technique", "Theory", "Ear Training"]} onChange={(v) => up({ focus: v })} />
+          <SelectField label="Repertoire status" value={student.repStatus} options={["", "Front Burner", "Back Burner", "Polished", "Dragon Music"]} onChange={(v) => up({ repStatus: v })} />
+          <TextField label="Level Up rank" value={student.rank} disabled onSave={() => undefined} hint="Read from the tracker. Never printed." />
+        </div>
+        <div className="grid-2">
+          <TextField label="Ear training" value={student.earTraining} multiline rows={3} onSave={(v) => up({ earTraining: v })} />
+          <TextField label="Warm-fuzzy log" value={student.warmFuzzy} multiline rows={3} onSave={(v) => up({ warmFuzzy: v })} />
+        </div>
+        {student.trackerChallenges.length > 0 && (
+          <div className="small">
+            <b>Challenges ticked in the tracker</b>
+            <ul className="plain">
+              {student.trackerChallenges.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {student.acquired.length > 0 && (
+          <p className="small">
+            <b>Acquired skills:</b> {student.acquired.join("; ")}.
+          </p>
+        )}
       </section>
 
       <section className="card pad stack">

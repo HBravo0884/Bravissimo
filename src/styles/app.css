@@ -1416,3 +1416,17 @@ dialog.sheet.wide { width: min(760px, calc(100vw - 24px)); }
   .card { box-shadow: none; }
   .slot { break-inside: avoid; }
 }
+
+/* A detail written as separate lines keeps its lines. */
+.pre-line {
+  white-space: pre-line;
+}
+
+.tracker-note summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+
+.tracker-note p {
+  margin: 6px 0 0;
+}

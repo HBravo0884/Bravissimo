@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { store, useData, useSync } from "../data/store";
 import { nameOf, weeksFor } from "../data/select";
-import { slotLabel } from "../../shared/records";
+import { isStudentRow, slotLabel } from "../../shared/records";
 import { href, navigate } from "../router";
 import { Chip, Empty, Icon, Segmented } from "../components/ui";
 import type { Student } from "../../shared/types";
@@ -18,7 +18,7 @@ export function Students() {
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return students
-      .filter((s) => (show === "all" ? true : s.status !== "Discontinued"))
+      .filter((s) => isStudentRow(s) && (show === "all" || s.status !== "Discontinued"))
       .filter((s) => !needle || `${s.name} ${s.displayName} ${s.slots.join(" ")}`.toLowerCase().includes(needle))
       .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
   }, [students, q, show]);
@@ -58,6 +58,14 @@ export function Students() {
       adultName: "",
       familyKey: "",
       familyKeyOn: "",
+      notes: "",
+      warmFuzzy: "",
+      earTraining: "",
+      focus: "",
+      repStatus: "",
+      rank: "",
+      acquired: [],
+      trackerChallenges: [],
     } satisfies Omit<Student, "id">);
     navigate(`/s/${s.id}/profile`);
   };
