@@ -21,3 +21,13 @@ Thumbs.db
 .idea/
 *.swp
 
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Looming test: recorded sessions, locally drawn zones and local settings
+looming/sessions/
+looming/zones.json
+looming/settings.json

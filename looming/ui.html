@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Looming test</title>
+<style>
+  /* Dark on purpose: the page should add as little light to the room as possible. */
+  :root {
+    --bg: #111317; --card: #1b1e24; --line: #2c313b; --field: #14171c;
+    --text: #e7e9ee; --muted: #949baa;
+    --green: #3ecf8e; --red: #f0545c; --amber: #f2a93b; --blue: #6aa9ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; display: flex; flex-direction: column;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .01em; }
+  h2 { font-size: 12px; margin: 0 0 10px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h3 { font-size: 12px; margin: 14px 0 6px; font-weight: 650; color: var(--muted); }
+  p { margin: 0; }
+  a { color: var(--blue); }
+  .muted { color: var(--muted); }
+  [hidden] { display: none !important; }
+
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 8px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  #conn { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
+  #conn::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
+  #conn.off { color: var(--red); }
+  #conn.off::before { background: var(--red); }
+  .spacer { flex: 1; }
+
+  main {
+    flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 410px;
+    gap: 14px; padding: 14px;
+  }
+  #left { min-width: 0; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+  /* The status card always stays in view; the cards under it scroll. */
+  #right { min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  #cards { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
+  @media (max-width: 1000px) {
+    body { height: auto; }
+    main { grid-template-columns: 1fr; }
+    #cards { overflow: visible; }
+  }
+
+  /* Camera view */
+  .viewbox {
+    position: relative; align-self: flex-start; max-width: 100%;
+    background: #000; border-radius: 8px; overflow: hidden; min-height: 120px; min-width: 240px;
+  }
+  #view { display: block; max-width: 100%; max-height: calc(100vh - 215px); min-height: 120px; }
+  #draw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #draw.active { pointer-events: auto; cursor: crosshair; }
+  #view-note {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: 20px; text-align: center; color: var(--muted); background: rgba(0, 0, 0, .55);
+  }
+
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  #drawbar { padding: 8px 12px; border: 1px solid var(--amber); border-radius: 8px; background: #2a2314; }
+  #drawbar strong { color: var(--amber); }
+
+  /* Controls */
+  button {
+    font: inherit; color: var(--text); background: #2a2f39; border: 1px solid #3b414e;
+    border-radius: 6px; padding: 7px 12px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #353b48; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: #1d7a52; border-color: #2a9a69; font-weight: 650; }
+  button.primary:hover:not(:disabled) { background: #22895c; }
+  button.danger { background: #2b1c1f; border-color: #7a2d33; color: #ffa3a8; }
+  button.danger:hover:not(:disabled) { background: #3a2226; }
+  button.big { width: 100%; padding: 11px 12px; font-size: 15px; }
+  button.small { padding: 3px 10px; }
+  button.on { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+  input, select {
+    font: inherit; color: var(--text); background: var(--field);
+    border: 1px solid #3b414e; border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0;
+  }
+  input:disabled, select:disabled { opacity: .5; }
+  input[type=checkbox] { width: auto; accent-color: var(--green); }
+  label { display: block; font-size: 12px; color: var(--muted); }
+  label > input, label > select { margin-top: 3px; }
+  label.inline { display: flex; align-items: center; gap: 7px; font-size: 14px; color: var(--text); }
+  .thr { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .thr output { min-width: 28px; text-align: center; color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* Cards */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  details.card > summary {
+    cursor: pointer; font-size: 12px; font-weight: 650; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  details.card[open] > summary { margin-bottom: 10px; }
+
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    display: inline-block; padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 650;
+    letter-spacing: .04em; text-transform: uppercase; background: #2c313b; color: var(--muted);
+  }
+  .pill.green { background: #123b2a; color: var(--green); }
+  .pill.amber { background: #3a2c10; color: var(--amber); }
+  .pill.red { background: #4a171b; color: #ff8b91; }
+  #timer { font-size: 40px; font-weight: 650; line-height: 1.15; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  #timer small { font-size: 18px; font-weight: 500; color: var(--muted); }
+  #status-line { margin-top: 2px; }
+  #status-sub { color: var(--muted); font-size: 13px; }
+  .warning { margin-top: 8px; padding: 7px 10px; border-radius: 6px; background: #4a171b; color: #ffb3b7; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+  .grid2 .wide { grid-column: 1 / -1; }
+  ul.checks { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+  ul.checks li { display: flex; gap: 8px; align-items: baseline; }
+  ul.checks li::before { content: "\2717"; color: var(--red); font-weight: 700; width: 12px; }
+  ul.checks li.ok::before { content: "\2713"; color: var(--green); }
+  ul.checks li.info::before { content: "\2022"; color: var(--amber); }
+  dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0 0 12px; font-size: 13px; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; overflow-wrap: anywhere; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 3px 6px 5px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 4px 6px 4px 0; border-bottom: 1px solid #23272f; }
+  .scroll { max-height: 190px; overflow-y: auto; }
+  .path { font-size: 12px; overflow-wrap: anywhere; color: var(--muted); margin-bottom: 8px; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: min(640px, 92vw);
+    padding: 10px 16px; border-radius: 8px; background: #2a2f39; border: 1px solid #3b414e;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .5); z-index: 10;
+  }
+  #toast.error { background: #4a171b; border-color: #7a2d33; color: #ffd0d2; }
+  #toast.warn { background: #3a2c10; border-color: #6b531c; color: #ffe2a8; }
+  #stopped {
+    position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 11, 14, .93); text-align: center; padding: 24px; font-size: 17px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Looming test</h1>
+  <div id="conn" role="status">Connecting…</div>
+  <span class="spacer"></span>
+  <button id="btn-quit" class="danger">Quit program</button>
+</header>
+
+<main>
+  <section id="left" aria-label="Camera">
+    <div class="viewbox">
+      <img id="view" alt="Live camera image with the zones and the tracked animal">
+      <canvas id="draw"></canvas>
+      <div id="view-note">Waiting for the camera…</div>
+    </div>
+
+    <div id="drawbar" class="bar" hidden>
+      <span><strong id="draw-title">Drawing the trigger zone.</strong> Click each corner on the image.</span>
+      <span class="spacer"></span>
+      <button id="draw-finish" class="primary">Finish</button>
+      <button id="draw-undo">Undo corner</button>
+      <button id="draw-cancel">Cancel</button>
+    </div>
+
+    <div class="bar" id="toolbar">
+      <button id="btn-bg" title="Stores a picture of the arena without the animal">Capture background</button>
+      <button id="btn-zone">Draw trigger zone</button>
+      <button id="btn-arena" title="Optional: nothing outside this outline is tracked">Draw arena boundary</button>
+      <button id="btn-clear">Clear zones</button>
+      <span class="spacer"></span>
+      <label class="inline" title="White = what the tracker takes for the animal">
+        <input type="checkbox" id="chk-mask"> Tracker view
+      </label>
+      <span class="thr" title="Raise it if too much is detected, lower it if the animal is missed">
+        Threshold
+        <button id="thr-down" class="small" aria-label="Lower the threshold">&minus;</button>
+        <output id="thr-val">–</output>
+        <button id="thr-up" class="small" aria-label="Raise the threshold">+</button>
+      </span>
+    </div>
+    <p id="track-line" class="muted">&nbsp;</p>
+  </section>
+
+  <aside id="right">
+    <section class="card" aria-live="polite">
+      <div class="pills">
+        <span id="pill-mode" class="pill">Setup</span>
+        <span id="pill-stim" class="pill red" hidden>Stimulus on</span>
+      </div>
+      <div id="timer">–</div>
+      <p id="status-line"></p>
+      <p id="status-sub"></p>
+      <div id="warnings"></div>
+    </section>
+
+    <div id="cards">
+    <section class="card" id="card-setup">
+      <h2>Next animal</h2>
+      <form id="animal-form" class="grid2" autocomplete="off"></form>
+      <ul id="checklist" class="checks"></ul>
+      <button id="btn-start" class="primary big">Start session</button>
+    </section>
+
+    <section class="card" id="card-session" hidden>
+      <h2 id="session-title">Session</h2>
+      <dl id="session-facts" class="facts"></dl>
+      <div class="bar">
+        <button id="btn-pause">Pause triggering</button>
+        <span class="spacer"></span>
+        <button id="btn-end" class="danger">End session now</button>
+      </div>
+    </section>
+
+    <section class="card" id="card-looms" hidden>
+      <h2>Looms in this session</h2>
+      <p id="looms-empty" class="muted">No loom yet.</p>
+      <div class="scroll" id="looms-scroll" hidden>
+        <table>
+          <thead><tr><th>#</th><th>Session time</th><th>Clock</th><th>Type</th></tr></thead>
+          <tbody id="looms-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Stimulus</h2>
+      <p id="stim-line" class="muted" style="margin-bottom:10px"></p>
+      <div class="bar">
+        <button id="btn-test">Test the stimulus</button>
+        <button id="btn-stop">Stop it</button>
+      </div>
+    </section>
+
+    <details class="card" id="card-settings">
+      <summary>Settings</summary>
+      <form id="settings-form" autocomplete="off"></form>
+      <div class="bar" style="margin-top:12px">
+        <button id="btn-apply" class="primary">Apply settings</button>
+        <span id="settings-note" class="muted" style="font-size:12px"></span>
+      </div>
+    </details>
+
+    <details class="card" id="card-results" open>
+      <summary>Results</summary>
+      <p class="path" id="results-path"></p>
+      <div class="bar" style="margin-bottom:10px">
+        <button id="btn-open">Open the results folder</button>
+        <a href="/results/all_sessions.csv">all_sessions.csv</a>
+        <a href="/results/all_looms.csv">all_looms.csv</a>
+      </div>
+      <p id="done-empty" class="muted">No session finished yet since the program started.</p>
+      <div class="scroll" id="done-scroll" hidden>
+        <table>
+          <thead><tr><th>Animal</th><th>Start</th><th>Min</th><th>Looms</th><th>Ended</th><th></th></tr></thead>
+          <tbody id="done-body"></tbody>
+        </table>
+      </div>
+    </details>
+    </div>
+  </aside>
+</main>
+
+<div id="toast" role="status" hidden></div>
+<div id="stopped" hidden><div><p id="stopped-text"></p></div></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+let state = null;          // what the program last told us
+let misses = 0;            // failed attempts to reach the program in a row
+let stopped = false;       // the program was told to quit
+let lastMessageId = null;
+let lastMode = null;
+let drawing = null;        // {kind, pts: [[x, y], ...], cursor} while a zone is being drawn
+let animalFields = "";     // the field names the animal form was built for
+const dirty = new Set();   // settings changed on the page and not applied yet
+
+// ---- small helpers ---------------------------------------------------------
+const clock = (seconds) => {
+  const s = Math.max(0, Math.floor(seconds));
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+};
+const countdown = (seconds) => clock(Math.ceil(Math.max(0, seconds) - 1e-9));
+const num = (value) => Number(value).toLocaleString("en-US", {maximumFractionDigits: 2});
+
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+let toastTimer = null;
+function toast(text, level) {
+  const box = $("toast");
+  box.textContent = text;
+  box.className = level || "";
+  box.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { box.hidden = true; }, level === "error" || level === "warn" ? 7000 : 3500);
+}
+
+async function api(action, data) {
+  try {
+    const response = await fetch("/api/" + action, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data || {}),
+    });
+    const result = await response.json();
+    if (!result.ok) toast(result.error || "That did not work", "error");
+    return result;
+  } catch (error) {
+    toast("The program is not answering", "error");
+    return {ok: false};
+  }
+}
+
+const setting = (path) => path.split(".").reduce((value, key) => (value == null ? value : value[key]), state.settings);
+
+// ---- talking to the program ---------------------------------------------------
+async function poll() {
+  if (stopped) return;
+  try {
+    const response = await fetch("/api/state", {cache: "no-store"});
+    state = await response.json();
+    if (misses >= 3) startStream();   // the program is back: reconnect the camera picture
+    misses = 0;
+  } catch (error) {
+    misses += 1;
+  }
+  const lost = misses >= 3;
+  $("conn").classList.toggle("off", lost);
+  $("conn").textContent = lost ? "Not connected: is the program still running?" : "Connected";
+  if (state && !lost) render();
+}
+
+function startStream() {
+  $("view").src = "/stream.mjpg?" + Date.now();
+}
+$("view").addEventListener("error", () => { if (!stopped) setTimeout(startStream, 1500); });
+$("view").addEventListener("load", () => { $("view-note").hidden = true; });
+
+// ---- drawing the page -----------------------------------------------------------
+function render() {
+  const s = state;
+  renderStatus(s);
+  renderSetup(s);
+  renderSession(s);
+  renderStimulus(s);
+  renderToolbar(s);
+  renderSettings(s);
+  renderResults(s);
+
+  if (lastMessageId !== null && s.message.id !== lastMessageId && s.message.text) {
+    toast(s.message.text, s.message.level === "warn" ? "warn" : "");
+  }
+  lastMessageId = s.message.id;
+  if (lastMode !== null && (lastMode === "setup") !== (s.mode === "setup")) {
+    $("cards").scrollTop = 0;   // a session started or ended: show the cards from the top
+    if (s.mode === "setup") sessionEnded();
+  }
+  lastMode = s.mode;
+}
+
+function renderStatus(s) {
+  const pill = $("pill-mode");
+  const names = {setup: ["Setup", ""], running: ["Session running", "green"], paused: ["Triggering paused", "amber"]};
+  pill.textContent = names[s.mode][0];
+  pill.className = "pill " + names[s.mode][1];
+  $("pill-stim").hidden = !s.stimulus_on;
+
+  if (s.session) {
+    const t = s.session.t, total = s.session.duration_s;
+    $("timer").replaceChildren(document.createTextNode(clock(t) + " "), el("small", "/ " + clock(total)));
+    $("status-line").textContent = s.session.status;
+    const looms = s.session.looms.length;
+    $("status-sub").textContent = countdown(total - t) + " left · " + looms + (looms === 1 ? " loom" : " looms")
+      + (s.session.recording ? " · recording video" : " · video is not recorded");
+  } else {
+    $("timer").replaceChildren(el("small", "No session running"));
+    $("status-line").textContent = "Plan: " + s.plan + ".";
+    $("status-sub").textContent = "";
+  }
+
+  const warnings = [];
+  if (!s.camera_ok) warnings.push("No image from the camera.");
+  if (!s.checks.stimulus) warnings.push("The stimulus window is not running. Quit and start the program again.");
+  $("warnings").replaceChildren(...warnings.map((text) => el("div", text, "warning")));
+}
+
+function renderSetup(s) {
+  $("card-setup").hidden = s.mode !== "setup";
+  if (s.mode !== "setup") return;
+  const fields = s.settings.session.animal_fields;
+  if (JSON.stringify(fields) !== animalFields) buildAnimalForm(fields);
+
+  const c = s.checks, stim = s.stimulus;
+  const idEntered = $("animal-0").value.trim() !== "";
+  const items = [
+    [c.stimulus, c.stimulus
+      ? "Stimulus window is running (display " + stim.display + ", " + stim.screen_size[0] + " × " + stim.screen_size[1] + ")"
+      : "Stimulus window is not running"],
+    c.background === null ? null : [c.background, c.capturing_background ? "Capturing the background…"
+      : (c.background ? "Background captured" : "Capture the background with the arena empty")],
+    [c.zone, c.zone ? "Trigger zone drawn" : "Draw the trigger zone"],
+    [idEntered, idEntered ? "Animal details entered" : "Enter the " + fields[0]],
+  ].filter(Boolean);
+  const list = items.map(([ok, text]) => el("li", text, ok ? "ok" : ""));
+  list.push(el("li", c.mouse ? "The animal is detected" : "No animal detected right now", c.mouse ? "ok" : "info"));
+  $("checklist").replaceChildren(...list);
+
+  const ready = items.every(([ok]) => ok);
+  $("btn-start").disabled = !ready;
+  $("btn-start").textContent = "Start " + num(s.settings.session.duration_min) + "-minute session";
+  $("btn-start").title = ready ? "" : "Complete the list above first";
+}
+
+function buildAnimalForm(fields) {
+  animalFields = JSON.stringify(fields);
+  const form = $("animal-form");
+  form.replaceChildren(...fields.map((name, index) => {
+    const label = el("label", name + (index === 0 ? " (required)" : ""));
+    if (index === 0 || /notes/i.test(name)) label.className = "wide";
+    const input = el("input");
+    input.id = "animal-" + index;
+    input.maxLength = 200;
+    label.append(input);
+    return label;
+  }));
+}
+
+function renderSession(s) {
+  $("card-session").hidden = !s.session;
+  $("card-looms").hidden = !s.session;
+  if (!s.session) return;
+  $("session-title").textContent = "Session: " + s.session.animal_id;
+  const facts = [];
+  for (const [name, value] of Object.entries(s.session.animal).slice(1)) {
+    if (value) facts.push(el("dt", name), el("dd", value));
+  }
+  facts.push(el("dt", "Saved in"), el("dd", s.session.folder));
+  $("session-facts").replaceChildren(...facts);
+  $("btn-pause").textContent = s.mode === "paused" ? "Resume triggering" : "Pause triggering";
+
+  const looms = s.session.looms;
+  $("looms-empty").hidden = looms.length > 0;
+  $("looms-scroll").hidden = looms.length === 0;
+  const body = $("looms-body");
+  if (body.children.length !== looms.length) {
+    body.replaceChildren(...looms.map((loom) => {
+      const row = el("tr");
+      row.append(el("td", loom.loom), el("td", loom.onset_mm_ss),
+                 el("td", loom.clock_time.split(" ")[1].split(".")[0]),
+                 el("td", loom.type === "auto" ? "automatic" : loom.type));
+      return row;
+    }));
+    $("looms-scroll").scrollTop = $("looms-scroll").scrollHeight;
+  }
+}
+
+function renderStimulus(s) {
+  const stim = s.stimulus;
+  $("stim-line").textContent = stim.description
+    + (stim.duration_s ? ", " + num(stim.duration_s) + " s in total" : "")
+    + ". Shown " + (stim.fullscreen ? "fullscreen on display " + stim.display : "in a window")
+    + " at " + num(stim.refresh_hz) + " Hz.";
+  $("btn-test").textContent = s.session ? "Play a loom now" : "Test the stimulus";
+  $("btn-test").title = s.session ? "Counts as a loom of this session and restarts the downtime" : "";
+  $("btn-test").disabled = !s.checks.stimulus || s.stimulus_on;
+  $("btn-stop").disabled = !s.stimulus_on;
+}
+
+function renderToolbar(s) {
+  const locked = s.mode === "running";
+  for (const id of ["btn-bg", "btn-zone", "btn-arena", "btn-clear"]) {
+    $(id).disabled = locked;
+    if (locked) $(id).title = "Pause triggering first";
+  }
+  if (!locked) {
+    $("btn-bg").title = "Stores a picture of the arena without the animal";
+    $("btn-zone").title = "";
+    $("btn-arena").title = "Optional: nothing outside this outline is tracked";
+    $("btn-clear").title = "";
+  }
+  $("btn-zone").textContent = s.zones.trigger ? "Redraw trigger zone" : "Draw trigger zone";
+  $("btn-arena").textContent = s.zones.arena ? "Redraw arena boundary" : "Draw arena boundary";
+  $("btn-clear").disabled = locked || (!s.zones.trigger && !s.zones.arena);
+  $("chk-mask").checked = s.tracking.mask_view;
+  $("thr-val").textContent = setting(thresholdPath());
+
+  const t = s.tracking;
+  $("track-line").textContent = (t.found
+    ? "Animal at (" + t.x + ", " + t.y + "), size " + t.area + " px"
+    : "No animal detected")
+    + " · camera " + s.frame_size[0] + " × " + s.frame_size[1] + ", " + Math.round(t.fps) + " frames per second"
+    + (s.zones.trigger ? " · green outline = trigger zone (red while occupied)" : "")
+    + (s.zones.arena ? " · yellow = arena" : "");
+  if (!drawing) sizeCanvas();
+}
+
+const thresholdPath = () =>
+  setting("tracking.method") === "background" ? "tracking.diff_threshold" : "tracking.intensity_threshold";
+
+// ---- settings ---------------------------------------------------------------------
+const loomUnit = () => (state && setting("stimulus.loom.units") === "px" ? "px" : "degrees");
+const SETTINGS = [
+  {group: "Session"},
+  {path: "session.duration_min", label: "Session length (minutes)", step: 1},
+  {path: "trigger.downtime_s", label: "Downtime after a loom (seconds)", step: 10},
+  {path: "session.acclimation_min", label: "No looms at the start for (minutes)", step: 1},
+  {path: "trigger.dwell_s", label: "Time in the zone before a loom (seconds)", step: 0.1},
+  {path: "trigger.max_looms", label: "Most looms per session (0 = no limit)", step: 1},
+  {path: "trigger.entry_rule", label: "A loom can start", wide: true, options: [
+    ["in_zone", "whenever the animal is in the zone"],
+    ["left_since_last", "only if the animal left the zone since the last loom"],
+    ["fresh_entry", "only when the animal enters after the downtime is over"]]},
+  {group: "Looming disc"},
+  {path: "stimulus.loom.start_size", label: () => "Start diameter (" + loomUnit() + ")", step: 1},
+  {path: "stimulus.loom.end_size", label: () => "End diameter (" + loomUnit() + ")", step: 1},
+  {path: "stimulus.loom.expand_s", label: "Expansion time (seconds)", step: 0.05},
+  {path: "stimulus.loom.hold_s", label: "Hold at full size (seconds)", step: 0.05},
+  {path: "stimulus.loom.isi_s", label: "Gap between discs (seconds)", step: 0.1},
+  {path: "stimulus.loom.repeats", label: "Number of discs per loom", step: 1},
+  {group: "Screen (used to convert degrees to pixels)"},
+  {path: "stimulus.screen_width_cm", label: "Screen width (cm)", step: 0.5},
+  {path: "stimulus.viewing_distance_cm", label: "Animal to screen (cm)", step: 0.5},
+  {group: "Tracking"},
+  {path: "tracking.method", label: "Find the animal by", wide: true, anytime: true, options: [
+    ["background", "its difference from the empty arena (needs a background)"],
+    ["dark", "being darker than the floor"],
+    ["light", "being lighter than the floor"]]},
+  {path: "tracking.min_area_px", label: "Smallest animal size (px)", step: 50, anytime: true},
+  {path: "tracking.max_area_px", label: "Largest animal size (px)", step: 500, anytime: true},
+  {group: "Recording"},
+  {path: "output.record_video", label: "Record the camera video of each session", checkbox: true, wide: true},
+];
+
+function buildSettingsForm() {
+  const form = $("settings-form");
+  let grid = null;
+  for (const item of SETTINGS) {
+    if (item.group) {
+      form.append(el("h3", item.group));
+      grid = el("div", null, "grid2");
+      form.append(grid);
+      continue;
+    }
+    const label = el("label", null, (item.checkbox ? "inline " : "") + (item.wide ? "wide" : ""));
+    const caption = el("span", typeof item.label === "function" ? "" : item.label);
+    let input;
+    if (item.options) {
+      input = el("select");
+      for (const [value, text] of item.options) {
+        const option = el("option", text);
+        option.value = value;
+        input.append(option);
+      }
+    } else {
+      input = el("input");
+      input.type = item.checkbox ? "checkbox" : "number";
+      if (!item.checkbox) { input.step = "any"; input.inputMode = "decimal"; }
+    }
+    input.dataset.path = item.path;
+    item.input = input;
+    item.caption = caption;
+    input.addEventListener("input", () => dirty.add(item.path));
+    if (item.checkbox) label.append(input, caption); else label.append(caption, input);
+    grid.append(label);
+  }
+}
+
+function renderSettings(s) {
+  const inSession = s.mode !== "setup";
+  for (const item of SETTINGS) {
+    if (!item.input) continue;
+    if (typeof item.label === "function") item.caption.textContent = item.label();
+    item.input.disabled = inSession && !item.anytime;
+    if (dirty.has(item.path) || document.activeElement === item.input) continue;
+    const value = setting(item.path);
+    if (item.checkbox) item.input.checked = Boolean(value); else item.input.value = value;
+  }
+  $("settings-note").textContent = inSession ? "Most settings are locked during a session."
+    : (s.settings_saved ? "Changes are saved for next time." : "Demo: changes are not saved.");
+  if (s.stimulus.mode !== "loom") {
+    $("settings-note").textContent += " The stimulus is a " + s.stimulus.mode + ", so the disc settings are not used.";
+  }
+}
+
+async function applySettings() {
+  if (dirty.size === 0) return toast("Nothing was changed");
+  const patch = {};
+  for (const item of SETTINGS) {
+    if (!item.input || !dirty.has(item.path)) continue;
+    let value;
+    if (item.checkbox) value = item.input.checked;
+    else if (item.options) value = item.input.value;
+    else {
+      value = item.input.value.trim() === "" ? NaN : Number(item.input.value);
+      if (!Number.isFinite(value)) {
+        item.input.focus();
+        return toast("Please enter a number for: " + item.caption.textContent, "error");
+      }
+    }
+    const keys = item.path.split(".");
+    let target = patch;
+    for (const key of keys.slice(0, -1)) target = target[key] = target[key] || {};
+    target[keys[keys.length - 1]] = value;
+  }
+  const result = await api("settings", patch);
+  if (result.ok) dirty.clear();
+}
+
+// ---- results ------------------------------------------------------------------------
+function renderResults(s) {
+  $("results-path").textContent = "Folder: " + s.results_dir;
+  const done = s.completed;
+  $("done-empty").hidden = done.length > 0;
+  $("done-scroll").hidden = done.length === 0;
+  const body = $("done-body");
+  if (body.children.length === done.length) return;
+  body.replaceChildren(...done.map((session) => {
+    const row = el("tr");
+    const link = el("a", "looms.csv");
+    link.href = "/results/" + encodeURIComponent(session.folder) + "/looms.csv";
+    const cell = el("td");
+    cell.append(link);
+    row.append(el("td", session.animal_id), el("td", session.start_time), el("td", session.ran_min),
+               el("td", session.looms), el("td", session.ended), cell);
+    return row;
+  }));
+}
+
+function sessionEnded() {
+  // Ready for the next animal: keep what usually repeats, clear what does not.
+  const inputs = $("animal-form").querySelectorAll("input");
+  inputs.forEach((input, index) => {
+    const name = input.parentElement.textContent;
+    if (index === 0 || /notes/i.test(name)) input.value = "";
+  });
+  if (inputs.length) inputs[0].focus();
+}
+
+// ---- drawing a zone on the camera picture ----------------------------------------------
+const canvas = $("draw");
+const ZONE_COLOURS = {trigger: "#5ae65a", arena: "#ffd700"};
+
+function sizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  const w = Math.round(rect.width * ratio), h = Math.round(rect.height * ratio);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  return {rect, ratio};
+}
+
+function toImage(event) {
+  const rect = canvas.getBoundingClientRect();
+  const [w, h] = state.frame_size;
+  const x = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1) * (w - 1);
+  const y = Math.min(Math.max((event.clientY - rect.top) / rect.height, 0), 1) * (h - 1);
+  return [Math.round(x), Math.round(y)];
+}
+
+function redraw() {
+  const {rect, ratio} = sizeCanvas();
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!drawing || !state) return;
+  const sx = rect.width * ratio / state.frame_size[0], sy = rect.height * ratio / state.frame_size[1];
+  const colour = ZONE_COLOURS[drawing.kind];
+  const points = drawing.cursor ? drawing.pts.concat([drawing.cursor]) : drawing.pts;
+  ctx.lineWidth = 2 * ratio;
+  ctx.strokeStyle = colour;
+  ctx.fillStyle = colour;
+  if (points.length > 1) {
+    ctx.beginPath();
+    points.forEach(([x, y], index) => (index ? ctx.lineTo(x * sx, y * sy) : ctx.moveTo(x * sx, y * sy)));
+    ctx.stroke();
+  }
+  drawing.pts.forEach(([x, y], index) => {
+    ctx.beginPath();
+    ctx.arc(x * sx, y * sy, (index === 0 ? 7 : 4.5) * ratio, 0, 2 * Math.PI);
+    ctx.fill();
+  });
+}
+
+function startDrawing(kind) {
+  if (!state) return;
+  drawing = {kind, pts: [], cursor: null};
+  canvas.classList.add("active");
+  $("drawbar").hidden = false;
+  $("draw-title").textContent = kind === "trigger" ? "Drawing the trigger zone." : "Drawing the arena boundary.";
+  redraw();
+}
+
+function stopDrawing() {
+  drawing = null;
+  canvas.classList.remove("active");
+  $("drawbar").hidden = true;
+  redraw();
+}
+
+async function finishDrawing() {
+  if (!drawing) return;
+  if (drawing.pts.length < 3) return toast("A zone needs at least 3 corners: keep clicking, or press Cancel", "error");
+  const result = await api("set_zone", {kind: drawing.kind, points: drawing.pts});
+  if (result.ok) stopDrawing();
+}
+
+canvas.addEventListener("click", (event) => {
+  if (!drawing) return;
+  const point = toImage(event);
+  if (drawing.pts.length >= 3) {   // a click on the first corner closes the shape
+    const rect = canvas.getBoundingClientRect();
+    const scale = rect.width / state.frame_size[0];
+    const [fx, fy] = drawing.pts[0];
+    if (Math.hypot((point[0] - fx) * scale, (point[1] - fy) * scale) <= 12) return finishDrawing();
+  }
+  drawing.pts.push(point);
+  redraw();
+});
+canvas.addEventListener("mousemove", (event) => {
+  if (!drawing) return;
+  drawing.cursor = toImage(event);
+  redraw();
+});
+canvas.addEventListener("mouseleave", () => { if (drawing) { drawing.cursor = null; redraw(); } });
+canvas.addEventListener("contextmenu", (event) => { if (drawing) { event.preventDefault(); finishDrawing(); } });
+window.addEventListener("resize", redraw);
+document.addEventListener("keydown", (event) => {
+  if (!drawing || /^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;
+  if (event.key === "Enter") { event.preventDefault(); finishDrawing(); }
+  else if (event.key === "Escape") stopDrawing();
+  else if (event.key === "Backspace") { event.preventDefault(); drawing.pts.pop(); redraw(); }
+});
+
+// ---- buttons ---------------------------------------------------------------------------
+$("btn-bg").addEventListener("click", () => {
+  if (confirm("Is the arena empty?\n\nThe background must be captured without the animal.")) api("capture_background");
+});
+$("btn-zone").addEventListener("click", () => startDrawing("trigger"));
+$("btn-arena").addEventListener("click", () => startDrawing("arena"));
+$("btn-clear").addEventListener("click", () => { if (confirm("Remove the trigger zone and the arena boundary?")) api("clear_zones"); });
+$("draw-finish").addEventListener("click", finishDrawing);
+$("draw-undo").addEventListener("click", () => { if (drawing) { drawing.pts.pop(); redraw(); } });
+$("draw-cancel").addEventListener("click", stopDrawing);
+$("chk-mask").addEventListener("change", (event) => api("mask_view", {on: event.target.checked}));
+
+function nudgeThreshold(step) {
+  if (!state) return;
+  const [section, key] = thresholdPath().split(".");
+  const value = Math.min(254, Math.max(1, setting(thresholdPath()) + step));
+  api("settings", {[section]: {[key]: value}});
+}
+$("thr-down").addEventListener("click", () => nudgeThreshold(-2));
+$("thr-up").addEventListener("click", () => nudgeThreshold(2));
+
+$("animal-form").addEventListener("submit", (event) => event.preventDefault());
+$("btn-start").addEventListener("click", () => {
+  const fields = state.settings.session.animal_fields;
+  const animal = {};
+  fields.forEach((name, index) => { animal[name] = $("animal-" + index).value.trim(); });
+  api("start_session", {animal});
+});
+$("btn-pause").addEventListener("click", () => api(state.mode === "paused" ? "resume" : "pause"));
+$("btn-end").addEventListener("click", () => {
+  if (confirm("End this session now?\n\nWhat was recorded so far is saved.")) api("end_session");
+});
+$("btn-test").addEventListener("click", () => api("test_stimulus"));
+$("btn-stop").addEventListener("click", () => api("stop_stimulus"));
+$("settings-form").addEventListener("submit", (event) => event.preventDefault());
+$("btn-apply").addEventListener("click", applySettings);
+$("btn-open").addEventListener("click", () => api("open_results"));
+$("btn-quit").addEventListener("click", async () => {
+  const running = state && state.session;
+  if (!confirm(running ? "Quit the program?\n\nThe running session will be ended and saved."
+                       : "Quit the program?")) return;
+  const result = await api("quit");
+  if (!result.ok) return;
+  stopped = true;
+  $("view").removeAttribute("src");
+  $("stopped-text").textContent = "The program has stopped. You can close this tab.";
+  $("stopped").hidden = false;
+});
+
+buildSettingsForm();
+startStream();
+poll();
+setInterval(poll, 300);
+</script>
+</body>
+</html>

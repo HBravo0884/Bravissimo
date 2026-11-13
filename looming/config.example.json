@@ -1,0 +1,102 @@
+{
+  "camera": {
+    "source": 0,
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "backend": "auto",
+    "fourcc": null
+  },
+  "tracking": {
+    "method": "background",
+    "polarity": "any",
+    "diff_threshold": 30,
+    "intensity_threshold": 70,
+    "blur_px": 5,
+    "morph_px": 5,
+    "min_area_px": 200,
+    "max_area_px": 40000,
+    "background_frames": 30
+  },
+  "session": {
+    "duration_min": 60,
+    "acclimation_min": 0,
+    "animal_fields": [
+      "Animal ID",
+      "Sex",
+      "Age",
+      "Genotype",
+      "Group",
+      "Weight (g)",
+      "Experimenter",
+      "Notes"
+    ]
+  },
+  "trigger": {
+    "dwell_s": 0.1,
+    "downtime_s": 180.0,
+    "max_looms": 0,
+    "entry_rule": "in_zone",
+    "lost_counts_as_outside_after_s": 2.0
+  },
+  "stimulus": {
+    "mode": "loom",
+    "display": 1,
+    "fullscreen": true,
+    "window_size": [
+      960,
+      540
+    ],
+    "background_color": [
+      128,
+      128,
+      128
+    ],
+    "refresh_hz": 60,
+    "screen_width_cm": 53.0,
+    "viewing_distance_cm": 30.0,
+    "loom": {
+      "units": "deg",
+      "start_size": 2.0,
+      "end_size": 20.0,
+      "expand_s": 0.25,
+      "hold_s": 0.25,
+      "isi_s": 0.5,
+      "repeats": 15,
+      "profile": "linear",
+      "disc_color": [
+        0,
+        0,
+        0
+      ],
+      "center": [
+        0.5,
+        0.5
+      ]
+    },
+    "movie": {
+      "path": "",
+      "fit": "contain",
+      "repeats": 1,
+      "isi_s": 0.5
+    },
+    "images": {
+      "dir": "",
+      "fps": 60,
+      "hold_last_s": 0.0,
+      "fit": "contain",
+      "repeats": 1,
+      "isi_s": 0.5
+    },
+    "sync_patch": {
+      "enabled": false,
+      "size_px": 60,
+      "corner": "bottom_left"
+    }
+  },
+  "output": {
+    "dir": "sessions",
+    "record_video": true,
+    "zones_file": "zones.json"
+  }
+}
