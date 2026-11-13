@@ -6,6 +6,8 @@ without hardware.
 from __future__ import annotations
 
 import copy
+import csv
+import datetime
 import json
 import math
 import os
@@ -50,11 +52,17 @@ DEFAULTS = {
         "max_area_px": 40000,
         "background_frames": 30,
     },
+    "session": {
+        "duration_min": 60,          # length of one animal's session
+        "acclimation_min": 0,        # no loom during the first minutes of a session
+        # What to ask about each animal. The first one names the session folder.
+        "animal_fields": ["Animal ID", "Sex", "Age", "Genotype", "Group", "Weight (g)", "Experimenter", "Notes"],
+    },
     "trigger": {
-        "dwell_s": 0.1,
-        "cooldown_s": 60.0,
-        "max_trials": 5,             # 0 = no limit
-        "require_fresh_entry": False,
+        "dwell_s": 0.1,              # how long the animal must be in the zone before a loom starts
+        "downtime_s": 180.0,         # no new loom for this long after one was triggered
+        "max_looms": 0,              # per session; 0 = no limit
+        "entry_rule": "in_zone",     # in_zone | left_since_last | fresh_entry
         "lost_counts_as_outside_after_s": 2.0,   # null = never
     },
     "stimulus": {
@@ -100,6 +108,7 @@ _CHOICES = {
     ("camera", "backend"): ("auto", "any", "dshow", "msmf", "v4l2", "avfoundation"),
     ("tracking", "method"): ("background", "dark", "light"),
     ("tracking", "polarity"): ("any", "darker", "lighter"),
+    ("trigger", "entry_rule"): ("in_zone", "left_since_last", "fresh_entry"),
     ("stimulus", "mode"): ("loom", "movie", "images"),
     ("stimulus", "loom", "units"): ("deg", "px"),
     ("stimulus", "loom", "profile"): ("linear", "approach"),
@@ -107,6 +116,28 @@ _CHOICES = {
     ("stimulus", "images", "fit"): ("contain", "cover", "stretch", "none"),
     ("stimulus", "sync_patch", "corner"): ("bottom_left", "bottom_right", "top_left", "top_right"),
 }
+
+
+# Numbers that can be changed on the control page: (path, smallest, largest).
+_RANGES = [
+    (("session", "duration_min"), 0.01, 1440),
+    (("session", "acclimation_min"), 0, 1440),
+    (("trigger", "dwell_s"), 0, 60),
+    (("trigger", "downtime_s"), 0, 86400),
+    (("trigger", "max_looms"), 0, 10000),
+    (("tracking", "diff_threshold"), 1, 254),
+    (("tracking", "intensity_threshold"), 1, 254),
+    (("tracking", "min_area_px"), 1, 10_000_000),
+    (("tracking", "max_area_px"), 1, 100_000_000),
+    (("stimulus", "screen_width_cm"), 1, 1000),
+    (("stimulus", "viewing_distance_cm"), 1, 1000),
+    (("stimulus", "loom", "start_size"), 0.01, 10000),
+    (("stimulus", "loom", "end_size"), 0.01, 10000),
+    (("stimulus", "loom", "expand_s"), 0.01, 60),
+    (("stimulus", "loom", "hold_s"), 0, 60),
+    (("stimulus", "loom", "isi_s"), 0, 600),
+    (("stimulus", "loom", "repeats"), 1, 1000),
+]
 
 
 def merge_config(base: dict, override: dict | None, _path: str = ""):
@@ -139,13 +170,21 @@ def validate_config(cfg: dict) -> None:
             raise ValueError(
                 f"Setting {'.'.join(path)} is {value!r}; it must be one of: {', '.join(allowed)}"
             )
+    for path, low, high in _RANGES:
+        value = cfg
+        for key in path:
+            value = value[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+            raise ValueError(f"Setting {'.'.join(path)} must be a number from {low:g} to {high:g} (it is {value!r})")
     stim = cfg["stimulus"]
     if stim["mode"] == "movie" and not os.path.isfile(stim["movie"]["path"]):
         raise ValueError(f"Movie file not found: {stim['movie']['path']!r}")
     if stim["mode"] == "images" and not os.path.isdir(stim["images"]["dir"]):
         raise ValueError(f"Image folder not found: {stim['images']['dir']!r}")
-    if stim["screen_width_cm"] <= 0 or stim["viewing_distance_cm"] <= 0:
-        raise ValueError("stimulus.screen_width_cm and stimulus.viewing_distance_cm must be positive")
+    fields = cfg["session"]["animal_fields"]
+    if (not isinstance(fields, list) or not fields or len(set(fields)) != len(fields)
+            or not all(isinstance(f, str) and f.strip() for f in fields)):
+        raise ValueError("session.animal_fields must be a list of different, non-empty names")
 
 
 # --------------------------------------------------------------------------
@@ -272,23 +311,30 @@ def load_zones(path: str, frame_size) -> dict:
 # --------------------------------------------------------------------------
 
 class TriggerLogic:
-    """Decides when an entry into the trigger zone should start a stimulus.
+    """Decides when the animal being in the trigger zone should start a loom.
 
-    A stimulus is started when, while armed, the mouse has been seen outside
-    the zone and is then inside it continuously for ``dwell_s``, provided the
-    cooldown since the previous stimulus is over and trials remain.
+    While armed, a loom starts when the animal has been in the zone continuously
+    for ``dwell_s``, the acclimation period and the downtime since the previous
+    loom are over, and looms remain. ``entry_rule`` adds a condition:
+
+    - "in_zone": none. If the animal is still in the zone when the downtime
+      ends, the next loom starts then.
+    - "left_since_last": the animal must have been outside the zone at some
+      point since the previous loom (or since arming).
+    - "fresh_entry": as above, and it must have entered after the downtime ended.
     """
 
-    def __init__(self, dwell_s=0.1, cooldown_s=60.0, max_trials=5,
-                 require_fresh_entry=False, lost_counts_as_outside_after_s=2.0):
+    def __init__(self, dwell_s=0.1, downtime_s=180.0, max_looms=0, entry_rule="in_zone",
+                 lost_counts_as_outside_after_s=2.0, acclimation_s=0.0):
         self.dwell_s = float(dwell_s)
-        self.cooldown_s = float(cooldown_s)
-        self.max_trials = int(max_trials or 0)
-        self.require_fresh_entry = bool(require_fresh_entry)
+        self.downtime_s = float(downtime_s)
+        self.max_looms = int(max_looms or 0)
+        self.entry_rule = entry_rule
         self.lost_after_s = lost_counts_as_outside_after_s
+        self.acclimation_s = float(acclimation_s)
         self.armed = False
-        self.trials = 0
-        self.last_stim_t: float | None = None
+        self.looms = 0
+        self.last_loom_t: float | None = None
         self._was_outside = False
         self._enter_t: float | None = None
         self._lost_since: float | None = None
@@ -304,33 +350,34 @@ class TriggerLogic:
 
     @property
     def exhausted(self) -> bool:
-        return self.max_trials > 0 and self.trials >= self.max_trials
+        return self.max_looms > 0 and self.looms >= self.max_looms
 
-    def cooldown_remaining(self, t: float) -> float:
-        if self.last_stim_t is None:
+    def downtime_remaining(self, t: float) -> float:
+        if self.last_loom_t is None:
             return 0.0
-        return max(0.0, self.cooldown_s - (t - self.last_stim_t))
+        return max(0.0, self.downtime_s - (t - self.last_loom_t))
 
-    def note_stimulus(self, t: float, count: bool = True) -> None:
-        """Record that a stimulus started at time t (also used for manual ones)."""
-        self.last_stim_t = t
+    def note_loom(self, t: float) -> None:
+        """Record that a loom was triggered at time t (also used for manual ones)."""
+        self.last_loom_t = t
+        self.looms += 1
         self._was_outside = False
         self._enter_t = None
-        if count:
-            self.trials += 1
 
     def status(self, t: float) -> str:
         if self.exhausted:
-            return "all trials done"
-        remaining = self.cooldown_remaining(t)
+            return "all looms for this session have been shown"
+        if t < self.acclimation_s:
+            return f"acclimation: {fmt_time(self.acclimation_s - t)} left"
+        remaining = self.downtime_remaining(t)
         if remaining > 0:
-            return f"cooldown {remaining:.0f} s"
-        if not self._was_outside:
-            return "waiting for the mouse to be outside the zone"
-        return "ready - fires when the mouse enters the zone"
+            return f"downtime: next loom possible in {fmt_time(remaining)}"
+        if self.entry_rule != "in_zone" and not self._was_outside:
+            return "waiting for the animal to leave the zone first"
+        return "ready: a loom plays when the animal is in the zone"
 
     def update(self, t: float, found: bool, in_zone: bool, busy: bool = False) -> bool:
-        """Feed one tracked frame; returns True when a stimulus should start now."""
+        """Feed one tracked frame; returns True when a loom should start now."""
         if not self.armed:
             return False
         if found:
@@ -348,16 +395,81 @@ class TriggerLogic:
                 self._was_outside = True
             self._enter_t = None
 
-        blocked = busy or self.cooldown_remaining(t) > 0
-        if blocked and self.require_fresh_entry and self._enter_t is not None:
-            # An entry made while a stimulus could not start does not count later.
+        blocked = busy or t < self.acclimation_s or self.downtime_remaining(t) > 0
+        if blocked and self.entry_rule == "fresh_entry" and self._enter_t is not None:
+            # An entry made while a loom could not start does not count later.
             self._was_outside = False
-        if blocked or self.exhausted or not self._was_outside or self._enter_t is None:
+        if blocked or self.exhausted or self._enter_t is None:
+            return False
+        if self.entry_rule != "in_zone" and not self._was_outside:
             return False
         if t - self._enter_t < self.dwell_s:
             return False
-        self.note_stimulus(t)
+        self.note_loom(t)
         return True
+
+
+# --------------------------------------------------------------------------
+# Times and results tables
+# --------------------------------------------------------------------------
+
+def fmt_time(seconds: float) -> str:
+    """Whole seconds as m:ss, rounded up so a countdown never shows 0:00 early."""
+    whole = max(0, math.ceil(seconds - 1e-9))
+    return f"{whole // 60}:{whole % 60:02d}"
+
+
+def fmt_elapsed(seconds: float) -> str:
+    """Whole seconds as m:ss, rounded down (for a clock that counts up)."""
+    whole = int(max(0.0, seconds))
+    return f"{whole // 60}:{whole % 60:02d}"
+
+
+def format_clock(seconds: float) -> str:
+    """Seconds as mm:ss.s, e.g. 125.34 -> "02:05.3"."""
+    tenths = int(round(max(0.0, seconds) * 10))
+    return f"{tenths // 600:02d}:{tenths % 600 // 10:02d}.{tenths % 10}"
+
+
+def safe_name(text: str) -> str:
+    """Text made safe for use in a file or folder name."""
+    cleaned = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(text).strip())
+    return cleaned.strip("_") or "animal"
+
+
+def append_rows(path: str, rows: list) -> str:
+    """Add rows (dicts with the same keys) to a CSV table and return the file written.
+
+    A table whose columns differ is set aside under another name rather than
+    rewritten, and if the table cannot be written (for example because it is
+    open in Excel) the rows go to a separate file next to it.
+    """
+    if not rows:
+        return path
+    columns = list(rows[0].keys())
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    base, extension = os.path.splitext(path)
+    try:
+        if os.path.isfile(path) and os.path.getsize(path) > 0:
+            with open(path, newline="", encoding="utf-8-sig", errors="replace") as f:
+                header = next(csv.reader(f), [])
+            if header != columns:
+                os.replace(path, f"{base}_until_{stamp}{extension}")
+        is_new = not os.path.isfile(path) or os.path.getsize(path) == 0
+        # The byte-order mark at the start lets Excel read accented characters.
+        with open(path, "a", newline="", encoding="utf-8-sig" if is_new else "utf-8") as f:
+            writer = csv.DictWriter(f, columns)
+            if is_new:
+                writer.writeheader()
+            writer.writerows(rows)
+        return path
+    except OSError:
+        fallback = f"{base}_not_merged_{stamp}{extension}"
+        with open(fallback, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, columns)
+            writer.writeheader()
+            writer.writerows(rows)
+        return fallback
 
 
 # --------------------------------------------------------------------------

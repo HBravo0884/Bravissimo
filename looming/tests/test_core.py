@@ -20,11 +20,18 @@ def settings(**changes):
 
 def test_merge_keeps_defaults_and_reports_unknown_keys():
     cfg, unknown = core.merge_config(core.DEFAULTS, {
-        "trigger": {"cooldown_s": 5, "cooldwn": 1}, "_comment": "ignored", "nonsense": 1})
-    assert cfg["trigger"]["cooldown_s"] == 5
+        "trigger": {"downtime_s": 5, "downtme": 1}, "_comment": "ignored", "nonsense": 1})
+    assert cfg["trigger"]["downtime_s"] == 5
     assert cfg["trigger"]["dwell_s"] == core.DEFAULTS["trigger"]["dwell_s"]
-    assert unknown == ["trigger.cooldwn", "nonsense"]
-    assert core.DEFAULTS["trigger"]["cooldown_s"] == 60.0  # the defaults themselves are untouched
+    assert unknown == ["trigger.downtme", "nonsense"]
+    assert core.DEFAULTS["trigger"]["downtime_s"] == 180.0  # the defaults themselves are untouched
+
+
+def test_defaults_are_the_one_hour_protocol():
+    assert core.DEFAULTS["session"]["duration_min"] == 60
+    assert core.DEFAULTS["trigger"]["downtime_s"] == 180
+    assert core.DEFAULTS["trigger"]["max_looms"] == 0
+    assert core.DEFAULTS["trigger"]["entry_rule"] == "in_zone"
 
 
 def test_example_config_matches_defaults():
@@ -38,6 +45,21 @@ def test_validate_rejects_bad_choice():
     with pytest.raises(ValueError, match="tracking.method"):
         core.validate_config(cfg)
     core.validate_config(core.DEFAULTS)
+
+
+@pytest.mark.parametrize("change, name", [
+    ({"stimulus": {"loom": {"repeats": 0}}}, "stimulus.loom.repeats"),
+    ({"trigger": {"downtime_s": -1}}, "trigger.downtime_s"),
+    ({"trigger": {"downtime_s": None}}, "trigger.downtime_s"),
+    ({"session": {"duration_min": "60"}}, "session.duration_min"),
+    ({"tracking": {"diff_threshold": True}}, "tracking.diff_threshold"),
+    ({"session": {"animal_fields": []}}, "animal_fields"),
+    ({"session": {"animal_fields": ["ID", "ID"]}}, "animal_fields"),
+])
+def test_validate_rejects_bad_numbers_and_fields(change, name):
+    cfg, _ = core.merge_config(core.DEFAULTS, change)
+    with pytest.raises(ValueError, match=name):
+        core.validate_config(cfg)
 
 
 # ---- tracking -------------------------------------------------------------
@@ -105,7 +127,9 @@ def feed(trig, t0, seconds, found, in_zone, busy=False, dt=1 / 30):
 
 
 def make(**kw):
-    args = dict(dwell_s=0.1, cooldown_s=10, max_trials=2, lost_counts_as_outside_after_s=2.0)
+    """An armed trigger with a 10 s downtime; by default the animal must leave between looms."""
+    args = dict(dwell_s=0.1, downtime_s=10, max_looms=2, entry_rule="left_since_last",
+                lost_counts_as_outside_after_s=2.0)
     args.update(kw)
     trig = core.TriggerLogic(**args)
     trig.arm()
@@ -117,7 +141,50 @@ def test_not_armed_never_fires():
     assert feed(trig, 0, 1, True, False) == [] and feed(trig, 1, 1, True, True) == []
 
 
-def test_mouse_already_in_zone_when_armed_does_not_fire():
+def test_in_zone_rule_fires_whenever_the_animal_is_in_the_zone_after_the_downtime():
+    """The default: 'can be triggered again once the animal is detected in the zone'."""
+    trig = make(entry_rule="in_zone", max_looms=0)
+    fired = feed(trig, 0, 35, True, True)                  # in the zone from the start and never leaves
+    assert len(fired) == 4
+    assert fired[0] == pytest.approx(0.1, abs=0.05)        # after the dwell time
+    assert [b - a for a, b in zip(fired, fired[1:])] == pytest.approx([10, 10, 10], abs=0.05)
+    assert trig.looms == 4
+
+    trig = make(entry_rule="in_zone", max_looms=0)
+    feed(trig, 0, 1, True, True)                           # first loom
+    assert feed(trig, 1, 20, True, False) == []            # away: nothing, however long
+    fired = feed(trig, 21, 1, True, True)                  # back after the downtime: at once
+    assert len(fired) == 1 and fired[0] == pytest.approx(21.1, abs=0.05)
+
+
+def test_default_rule_and_downtime_match_the_protocol():
+    trig = core.TriggerLogic(**core.DEFAULTS["trigger"])
+    trig.arm()
+    fired = feed(trig, 0, 3600, True, True, dt=0.1)        # an hour with the animal always in the zone
+    assert len(fired) == 20                                # one loom every 3 minutes
+    assert fired[1] - fired[0] == pytest.approx(180, abs=0.2)
+
+
+def test_acclimation_blocks_looms_at_the_start():
+    trig = make(entry_rule="in_zone", acclimation_s=5)
+    assert trig.status(1.0) == "acclimation: 0:04 left"
+    fired = feed(trig, 0, 8, True, True)
+    assert len(fired) == 1 and fired[0] == pytest.approx(5.0, abs=0.05)
+
+
+def test_status_texts():
+    trig = make(entry_rule="in_zone", max_looms=1)
+    assert trig.status(0) == "ready: a loom plays when the animal is in the zone"
+    feed(trig, 0, 1, True, True)
+    assert trig.status(5) == "all looms for this session have been shown"
+    trig = make()
+    assert trig.status(0) == "waiting for the animal to leave the zone first"
+    feed(trig, 0, 1, True, False)
+    feed(trig, 1, 1, True, True)
+    assert trig.status(3.0) == "downtime: next loom possible in 0:09"
+
+
+def test_mouse_already_in_zone_when_armed_does_not_fire_if_it_must_leave_first():
     trig = make()
     assert feed(trig, 0, 5, True, True) == []
 
@@ -128,7 +195,7 @@ def test_fires_once_on_entry_after_dwell():
     fired = feed(trig, 1, 3, True, True)
     assert len(fired) == 1
     assert 0.1 <= fired[0] - 1 < 0.1 + 2 / 30
-    assert trig.trials == 1
+    assert trig.looms == 1
 
 
 def test_brief_blip_shorter_than_dwell_does_not_fire():
@@ -138,25 +205,25 @@ def test_brief_blip_shorter_than_dwell_does_not_fire():
     assert feed(trig, 1.1, 1, True, False) == []
 
 
-def test_cooldown_and_max_trials():
+def test_downtime_and_max_looms():
     trig = make()
     feed(trig, 0, 1, True, False)
-    assert len(feed(trig, 1, 1, True, True)) == 1          # first stimulus at about t = 1.1
+    assert len(feed(trig, 1, 1, True, True)) == 1          # first loom at about t = 1.1
     feed(trig, 2, 1, True, False)
-    assert feed(trig, 3, 5, True, True) == []              # back in the zone during the cooldown
-    fired = feed(trig, 8, 5, True, True)                   # still there when the cooldown ends
+    assert feed(trig, 3, 5, True, True) == []              # back in the zone during the downtime
+    fired = feed(trig, 8, 5, True, True)                   # still there when the downtime ends
     assert len(fired) == 1 and 11.0 < fired[0] < 11.3
     feed(trig, 13, 1, True, False)
-    assert feed(trig, 14, 30, True, True) == []            # max_trials reached
-    assert trig.exhausted and trig.status(50) == "all trials done"
+    assert feed(trig, 14, 30, True, True) == []            # max_looms reached
+    assert trig.exhausted
 
 
-def test_require_fresh_entry_ignores_entries_made_during_cooldown():
-    trig = make(require_fresh_entry=True)
+def test_fresh_entry_rule_ignores_entries_made_during_the_downtime():
+    trig = make(entry_rule="fresh_entry")
     feed(trig, 0, 1, True, False)
     assert len(feed(trig, 1, 1, True, True)) == 1
     feed(trig, 2, 1, True, False)
-    assert feed(trig, 3, 20, True, True) == []             # entered during the cooldown and stayed
+    assert feed(trig, 3, 20, True, True) == []             # entered during the downtime and stayed
     feed(trig, 23, 1, True, False)
     assert len(feed(trig, 24, 1, True, True)) == 1         # left and came back: fires
 
@@ -177,12 +244,57 @@ def test_short_tracking_dropout_is_not_an_exit_but_a_long_one_is():
     assert len(feed(trig, 6, 1, True, True)) == 1          # comes out into the zone: fires
 
 
-def test_manual_stimulus_restarts_cooldown():
+def test_manual_loom_counts_and_restarts_the_downtime():
     trig = make()
     feed(trig, 0, 1, True, False)
-    trig.note_stimulus(1.0)
-    assert trig.trials == 1 and trig.cooldown_remaining(2.0) == pytest.approx(9.0)
+    trig.note_loom(1.0)
+    assert trig.looms == 1 and trig.downtime_remaining(2.0) == pytest.approx(9.0)
     assert feed(trig, 1, 5, True, True) == []
+
+
+# ---- times and results tables ------------------------------------------------
+
+def test_time_formats():
+    assert core.fmt_time(179.2) == "3:00" and core.fmt_time(0.4) == "0:01" and core.fmt_time(0) == "0:00"
+    assert core.fmt_elapsed(179.9) == "2:59" and core.fmt_elapsed(3600) == "60:00"
+    assert core.format_clock(125.34) == "02:05.3" and core.format_clock(3599.96) == "60:00.0"
+    assert core.safe_name(" M-01 /a ") == "M-01__a" and core.safe_name("??") == "animal"
+
+
+def read_table(path):
+    import csv
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        return list(csv.DictReader(f))
+
+
+def test_append_rows_builds_one_table_across_calls(tmp_path):
+    path = str(tmp_path / "all_sessions.csv")
+    assert core.append_rows(path, []) == path and not os.path.exists(path)
+    assert core.append_rows(path, [{"Animal ID": "M01", "looms": 3}]) == path
+    assert core.append_rows(path, [{"Animal ID": "Zo\u00eb", "looms": 0}, {"Animal ID": "M03", "looms": 7}]) == path
+    assert read_table(path) == [{"Animal ID": "M01", "looms": "3"}, {"Animal ID": "Zo\u00eb", "looms": "0"},
+                                {"Animal ID": "M03", "looms": "7"}]
+    with open(path, "rb") as f:
+        assert f.read().startswith(b"\xef\xbb\xbfAnimal ID,looms")   # one byte-order mark, for Excel
+        f.seek(0)
+        assert f.read().count(b"\xef\xbb\xbf") == 1
+
+
+def test_append_rows_sets_aside_a_table_with_other_columns(tmp_path):
+    path = str(tmp_path / "all_sessions.csv")
+    core.append_rows(path, [{"Animal ID": "M01", "looms": 3}])
+    core.append_rows(path, [{"Animal ID": "M02", "Sex": "F", "looms": 1}])
+    assert read_table(path) == [{"Animal ID": "M02", "Sex": "F", "looms": "1"}]
+    kept = [n for n in os.listdir(tmp_path) if n.startswith("all_sessions_until_")]
+    assert len(kept) == 1 and read_table(str(tmp_path / kept[0])) == [{"Animal ID": "M01", "looms": "3"}]
+
+
+def test_append_rows_writes_elsewhere_if_the_table_cannot_be_written(tmp_path):
+    path = str(tmp_path / "all_looms.csv")
+    os.mkdir(path)                                           # stands in for a file locked by Excel
+    written = core.append_rows(path, [{"Animal ID": "M01", "loom": 1}])
+    assert written != path and os.path.basename(written).startswith("all_looms_not_merged_")
+    assert read_table(written) == [{"Animal ID": "M01", "loom": "1"}]
 
 
 # ---- stimulus geometry and timing ------------------------------------------

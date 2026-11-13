@@ -96,6 +96,23 @@ def test_trigger_during_a_stimulus_is_refused_and_abort_stops_it(window):
     w.close()
 
 
+def test_new_settings_are_taken_while_running(window):
+    w = window(loom=FAST_LOOM)
+    assert w.expect("ready")["duration_s"] == pytest.approx(0.5)
+    changed, _ = core.merge_config(w.cfg, {"loom": dict(FAST_LOOM, repeats=4, end_size=30)})
+    w.cmd.put({"cmd": "configure", "cfg": changed})
+    configured = w.expect("configured")
+    assert configured["duration_s"] == pytest.approx(1.1) and "2->30 deg" in configured["description"]
+
+    w.cmd.put({"cmd": "trigger", "stim_id": 1, "label": "auto"})
+    onset = w.expect("onset")
+    w.cmd.put({"cmd": "configure", "cfg": w.cfg})          # not while a stimulus is playing
+    assert "a stimulus is playing" in w.expect("config_error")["msg"]
+    offset = w.expect("offset")
+    assert offset["t"] - onset["t"] == pytest.approx(1.1, abs=0.1)
+    w.close()
+
+
 def test_missing_display_is_an_error_in_fullscreen_but_not_for_a_preview_window(window):
     w = window(display=5, fullscreen=True)
     error = w.expect("error")

@@ -1,9 +1,10 @@
 """The stimulus window (pygame). It runs in its own process so that the screen
 keeps refreshing at the monitor's rate whatever the camera and tracker are doing.
 
-The tracking program sends commands on ``cmd_q`` ({"cmd": "trigger" | "abort" | "quit"})
-and receives events on ``evt_q`` ({"evt": "ready" | "onset" | "offset" | "busy" |
-"closed" | "error", "t": time on core.now()}).
+The tracking program sends commands on ``cmd_q`` ({"cmd": "trigger" | "abort" |
+"configure" | "quit"}) and receives events on ``evt_q`` ({"evt": "ready" | "onset" |
+"offset" | "busy" | "configured" | "config_error" | "closed" | "error",
+"t": time on core.now()}).
 """
 from __future__ import annotations
 
@@ -279,6 +280,7 @@ def _open_window(cfg: dict):
     os.environ.setdefault("SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS", "0")
     _make_dpi_aware()
     pygame.display.init()
+    pygame.display.set_allow_screensaver(False)   # keep the screens on during long sessions
     count = pygame.display.get_num_displays()
     index = int(cfg["display"])
     if not 0 <= index < count and not cfg["fullscreen"]:
@@ -379,6 +381,19 @@ def _run(cfg: dict, cmd_q, evt_q) -> None:
                     evt_q.put({"evt": "busy", "t": now(), "stim_id": command.get("stim_id")})
             elif name == "abort":
                 abort = True
+            elif name == "configure":
+                # New stimulus settings (disc sizes, timing, colours...) from the control page.
+                try:
+                    if active is not None or pending is not None:
+                        raise RuntimeError("a stimulus is playing")
+                    stimulus = build_stimulus(command["cfg"], screen)
+                    cfg = command["cfg"]
+                    background = tuple(cfg["background_color"])
+                    patch = _patch_rect(cfg["sync_patch"], screen.get_size()) if cfg["sync_patch"]["enabled"] else None
+                    evt_q.put({"evt": "configured", "t": now(), "description": stimulus.description,
+                               "duration_s": stimulus.duration_s})
+                except Exception as exc:
+                    evt_q.put({"evt": "config_error", "t": now(), "msg": f"{type(exc).__name__}: {exc}"})
             elif name == "quit":
                 running = False
             command = _next_command(cmd_q, 0.0)

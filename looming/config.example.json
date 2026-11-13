@@ -18,11 +18,25 @@
     "max_area_px": 40000,
     "background_frames": 30
   },
+  "session": {
+    "duration_min": 60,
+    "acclimation_min": 0,
+    "animal_fields": [
+      "Animal ID",
+      "Sex",
+      "Age",
+      "Genotype",
+      "Group",
+      "Weight (g)",
+      "Experimenter",
+      "Notes"
+    ]
+  },
   "trigger": {
     "dwell_s": 0.1,
-    "cooldown_s": 60.0,
-    "max_trials": 5,
-    "require_fresh_entry": false,
+    "downtime_s": 180.0,
+    "max_looms": 0,
+    "entry_rule": "in_zone",
     "lost_counts_as_outside_after_s": 2.0
   },
   "stimulus": {

@@ -27,6 +27,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Looming test: recorded sessions and locally drawn zones
+# Looming test: recorded sessions, locally drawn zones and local settings
 looming/sessions/
 looming/zones.json
+looming/settings.json
